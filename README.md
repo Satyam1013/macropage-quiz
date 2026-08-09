@@ -1,0 +1,165 @@
+# MACROPAGE Quiz Backend
+
+Backend for a live, in-person business quiz used at a MACROPAGE stage event.
+~100–110 small-business owners scan a QR code, register, answer 5
+mindset-based questions on their phones, watch a live leaderboard on a
+projector, and finish with an AI-generated "Analyze My Business" report. An
+admin controls the quiz flow from a laptop.
+
+## Tech stack
+
+- NestJS (TypeScript)
+- MongoDB + Mongoose
+- Socket.IO (`@nestjs/websockets` + `@nestjs/platform-socket.io`) for
+  real-time question push, live leaderboard, and state sync
+- JWT admin auth (`@nestjs/jwt`) — participants use a lightweight bearer
+  session token issued at registration, no password
+- `class-validator` / `class-transformer` for DTO validation
+- Anthropic API (`@anthropic-ai/sdk`) for AI business-analysis report
+  generation
+- `@nestjs/throttler` to survive 100+ people scanning a QR code at once
+
+## Setup
+
+```bash
+npm install
+cp .env.example .env
+# fill in MONGO_URI, JWT_SECRET, ADMIN_EMAIL, ADMIN_PASSWORD, ANTHROPIC_API_KEY
+
+npm run start:dev
+```
+
+On startup, the single admin account is bootstrapped automatically from
+`ADMIN_EMAIL` / `ADMIN_PASSWORD` if it doesn't already exist — no manual
+seeding step required.
+
+### Environment variables
+
+See `.env.example`:
+
+| Variable | Description |
+|---|---|
+| `PORT` | HTTP port (default 3000) |
+| `MONGO_URI` | MongoDB connection string |
+| `JWT_SECRET` | Secret used to sign admin JWTs |
+| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | Bootstrapped admin login |
+| `ANTHROPIC_API_KEY` | Anthropic API key |
+| `ANTHROPIC_MODEL` | Model string, e.g. `claude-sonnet-5` |
+| `CORS_ORIGIN` | Comma-separated allowed origins, or `*` |
+
+## Running a live event
+
+1. Admin logs in: `POST /api/auth/admin/login`.
+2. Admin creates a session: `POST /api/sessions` (auto-seeds the 5 default
+   questions unless `autoSeedQuestions: false` is passed).
+3. Admin opens registration: `POST /api/sessions/:id/open-registration`.
+   Participants scan the QR code (`https://quiz.macropage.in/join?session=<id>`)
+   and hit `POST /api/participants/register`, then complete onboarding.
+4. Admin starts the quiz: `POST /api/sessions/:id/start` — broadcasts
+   question 1 to everyone connected.
+5. Admin advances through questions: `POST /api/sessions/:id/next-question`.
+6. Admin ends the quiz: `POST /api/sessions/:id/end` — freezes the
+   leaderboard and signals participants to show their final rank.
+7. Participants tap "Analyze My Business":
+   `POST /api/participants/:id/analysis`.
+8. Admin exports the lead list: `GET /api/sessions/:id/export.csv`.
+
+## REST API
+
+All routes are prefixed with `/api` (except `/health`).
+
+### Public / participant-facing
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| POST | `/participants/register` | — | `{ sessionId, name, whatsappNumber }` → `{ participantId, sessionToken }` |
+| PATCH | `/participants/:id/onboarding` | sessionToken | `{ businessName?, businessCategory?, goal, goalOther? }` |
+| GET | `/sessions/:id/state` | — | `?participantId=` optional; current status, question index, has-answered flag |
+| GET | `/questions/:sessionId/current` | — | Active question, sanitized (no points) |
+| POST | `/answers` | sessionToken | `{ questionId, selectedKey, timeTakenMs }` |
+| GET | `/participants/:id/rank` | — | Current rank + score |
+| POST | `/participants/:id/analysis` | sessionToken | Generates (or returns cached) AI report |
+| GET | `/participants/:id/analysis` | — | Fetch existing report |
+
+### Admin-only (JWT bearer)
+
+| Method | Path | Description |
+|---|---|---|
+| POST | `/auth/admin/login` | `{ email, password }` → `{ accessToken }` |
+| POST | `/sessions` | Create a session; auto-seeds the 5 default questions |
+| POST | `/sessions/:id/open-registration` | draft → registration_open |
+| POST | `/sessions/:id/start` | registration_open → in_progress, question 0 |
+| POST | `/sessions/:id/next-question` | Advance question index |
+| POST | `/sessions/:id/end` | in_progress → ended, freezes leaderboard |
+| GET | `/sessions/:id/leaderboard` | Full ranked list with scores |
+| GET | `/sessions/:id/participants` | Full participant list + onboarding data |
+| GET | `/sessions/:id/export.csv` | CSV lead list (participants + business info + scores) |
+
+### Misc
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/health` | Render health check (not prefixed with `/api`) |
+
+## WebSocket gateway (`/quiz` namespace)
+
+Rooms: one room per `sessionId`, plus a `${sessionId}:display` sub-room for
+the projector screen.
+
+**Client → server**
+
+- `join` — `{ sessionId, participantId?, role: 'participant' | 'display' | 'admin' }`
+
+**Server → client**
+
+- `session:state` — full state snapshot, sent on join and on every transition
+- `question:new` — `{ question, index, totalQuestions, timeLimitSeconds, serverTimestamp }`
+- `leaderboard:update` — `{ top: [{ participantId, name, businessName, score, rank }], totalAnswered }`,
+  debounced to at most once per second per session
+- `quiz:ended` — final-rank screen trigger
+
+Answers are always submitted over REST (`POST /answers`), never over the
+socket — the socket is read/broadcast only, which keeps the write path
+simple and avoids double-submits.
+
+## Data model
+
+- **QuizSession** — one live event run; `draft → registration_open →
+  in_progress → ended`, with `currentQuestionIndex` and an ordered
+  `questionIds` list.
+- **Question** — text, dimension (one of `growth_mindset`,
+  `customer_relationship`, `strategic_thinking`, `investment_discipline`,
+  `digital_readiness`), 4 options each worth 0–3 points.
+- **Participant** — registers into a session with just a name + WhatsApp
+  number; gets a `sessionToken` used as a bearer token for every
+  authenticated follow-up call.
+- **Answer** — one per `(participantId, questionId)`, enforced by a unique
+  index.
+- **AnalysisReport** — cached per participant; dimension scores, a
+  weighted `techScore`, an archetype derived from the highest-scoring
+  dimension, and the AI-generated `reportJson`.
+
+## Scoring & the AI report
+
+1. Each dimension's score is the earned points on its one question,
+   normalized to 0–100.
+2. `techScore` is a weighted average across all five dimensions, weighted
+   toward `digital_readiness`.
+3. The archetype is picked from whichever dimension scored highest.
+4. The Anthropic API is prompted with the business info, computed scores,
+   and archetype, and asked to return strict JSON matching the
+   `reportJson` shape. A malformed response is retried once before
+   surfacing an error.
+5. Reports are cached — hitting `POST /participants/:id/analysis` again
+   returns the existing report instead of calling the model again.
+
+## Non-functional notes
+
+- Sized for ~110 concurrent participants: leaderboard broadcasts are
+  debounced to once per second per session instead of firing on every
+  single answer.
+- `POST /participants/register` is throttled (5 requests / 10s per IP) to
+  survive 100+ people scanning a QR code at the same moment; all other
+  routes share a lighter global default (120 req/min).
+- WhatsApp numbers are validated as 10-digit Indian mobile numbers with no
+  OTP step — this is a live-event lead-capture flow, not a banking app.
