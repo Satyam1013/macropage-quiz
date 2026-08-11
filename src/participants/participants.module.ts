@@ -9,7 +9,9 @@ import { LeaderboardModule } from '../leaderboard/leaderboard.module';
 
 @Module({
   imports: [
-    MongooseModule.forFeature([{ name: Participant.name, schema: ParticipantSchema }]),
+    MongooseModule.forFeature([
+      { name: Participant.name, schema: ParticipantSchema },
+    ]),
     SessionsModule,
     LeaderboardModule,
   ],

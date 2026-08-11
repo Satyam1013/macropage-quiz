@@ -2,51 +2,64 @@
 
 Build a mobile-first web frontend for a **live, in-person business quiz** run at a
 MACROPAGE stage event. ~100–110 small-business owners scan a QR code on their phones,
-register, answer 5 mindset questions with a countdown timer, watch a live leaderboard,
-and finish with an AI-generated "Analyze My Business" report. There is also a big-screen
-"display" view for the projector, and an admin console the event host runs from a laptop
-to control the quiz.
+register, create their profile, and wait. When the admin starts the quiz, everyone gets
+all 5 mindset questions at once and races through them self-paced (the whole quiz
+typically wraps in under a minute). Once the admin ends the quiz, every participant is
+dropped straight onto a results screen with their rank and an AI-generated "Analyze My
+Business" report. There is also a big-screen "display" view for the projector, and an
+admin console the event host runs from a laptop with exactly two controls: start and end.
 
 The backend is already built (NestJS + MongoDB + Socket.IO). Do not invent endpoints —
-use exactly what's documented below. Base API URL and Socket.IO URL should be read from
-environment variables (e.g. `VITE_API_URL`, `VITE_SOCKET_URL`).
+use exactly what's documented below. There is no "next question" admin control and no
+separate "open registration" step — do not build UI for either. Base API URL and
+Socket.IO URL should be read from environment variables (e.g. `VITE_API_URL`,
+`VITE_SOCKET_URL`).
 
 ## Screens to build
 
 ### 1. Participant flow (phone, portrait)
 1. **Join / Register** — landing page opened via QR code URL containing `?session=<id>`.
-   Form: name, WhatsApp number (10-digit Indian mobile). On submit, call
-   `POST /api/participants/register`, store `participantId` and `sessionToken` in
-   localStorage.
+   No "registration open" gate to check — the URL works as soon as the session exists,
+   right up until it's `ended`. Form: name, WhatsApp number (10-digit Indian mobile). On
+   submit, call `POST /api/participants/register`, store `participantId` and
+   `sessionToken` in localStorage.
 2. **Onboarding** — business name, business category (dropdown: Retail / Kirana, Food &
    Hospitality, Manufacturing, Services, Healthcare, Finance, Logistics & Transport,
    Education, Other — free text allowed too), and goal (grow customers / grow revenue /
    other, with a text field if "other"). Submit via
    `PATCH /api/participants/:id/onboarding` with the sessionToken as bearer auth.
-3. **Waiting room** — shown while `session:state.status` is `draft` or
-   `registration_open`. Friendly "hang tight, quiz starts soon" message.
-4. **Question screen** — shown on `question:new` socket event. Render question text, 4
-   options (A–D), a countdown ring/bar using `timeLimitSeconds` synced against
-   `serverTimestamp` (don't trust local clock drift). On selecting an answer, call
-   `POST /api/answers` immediately, then show a "locked in, waiting for others" state
-   until the next `question:new` or `quiz:ended` event. Handle the case where the
-   participant reloads mid-question — use `GET /api/sessions/:id/state?participantId=`
-   to check `hasAnsweredCurrentQuestion` and skip straight to the waiting state if true.
-5. **Live rank glimpse** (optional, between questions) — small toast/badge using
-   `GET /api/participants/:id/rank`.
-6. **Final screen** — shown on `quiz:ended`. Show final rank/score
-   (`GET /api/participants/:id/rank`), then a prominent **"Analyze My Business"** button.
-   On click, call `POST /api/participants/:id/analysis` (bearer sessionToken) — this can
-   take a few seconds, show an "AI is thinking about your business…" loading state, then
-   render the report: headline, businessSnapshot, mindsetProfile, archetype, a roadmap
-   checklist (goalRoadmap items), and the tech recommendation as a soft CTA. On
-   revisit/refresh, call `GET /api/participants/:id/analysis` first to show a cached
-   report without re-triggering generation.
+3. **Waiting room** — shown while `session:state.status` is `draft`. Friendly "hang
+   tight, quiz starts soon" message. This is where participants sit after finishing
+   onboarding.
+4. **Quiz screen** — shown on the `questions:all` socket event (fires once, when the
+   admin starts the quiz, containing all 5 questions). Render questions one at a time
+   (or as a swipeable stack) client-side — pacing is entirely up to the participant, the
+   server does not push questions individually. For each question, submit the answer via
+   `POST /api/answers` as soon as the participant picks an option, then move to the next
+   unanswered question immediately (no server round-trip needed to "unlock" it — they're
+   all already available). Once all 5 are answered, show a "you're done — waiting for
+   others to finish" screen. Handle reload mid-quiz: call
+   `GET /api/sessions/:id/state?participantId=` and use `answeredQuestionIds` to skip
+   already-answered questions and resume at the first unanswered one. `timeLimitSeconds`
+   on each question is a per-question display hint (e.g. a small elapsed/suggested-pace
+   indicator) — it is not server-enforced, so don't block submission on it.
+5. **Results screen** — shown on the `quiz:ended` socket event; this is the direct next
+   screen after the quiz, no separate "final rank" step. Show final rank/score
+   (`GET /api/participants/:id/rank`) and the leaderboard, then a prominent
+   **"Analyze My Business"** section. Call `POST /api/participants/:id/analysis` (bearer
+   sessionToken) — this can take a few seconds, show an "AI is thinking about your
+   business…" loading state, then render the report inline on the same screen: headline,
+   businessSnapshot, mindsetProfile, archetype, a roadmap checklist (goalRoadmap items),
+   and the tech recommendation as a soft CTA. On revisit/refresh, call
+   `GET /api/participants/:id/analysis` first to show a cached report without
+   re-triggering generation.
 
 ### 2. Display screen (projector, landscape, no interaction)
 Connects to the socket with `role: "display"`. Shows:
-- Waiting/registration count screen before start
-- Current question + live options while a question is active (no correct answer shown)
+- Waiting/registration count screen before start (`status: "draft"`)
+- A "quiz is live!" screen once `questions:all` fires (no per-question tracking to show,
+  since pacing is per-participant — a live answered-count via `leaderboard:update.
+  totalAnswered` is a good substitute for "progress")
 - A big animated leaderboard (top 10) that updates on `leaderboard:update`, sorted by
   rank, showing name + business name + score
 - A final leaderboard / "thank you" screen on `quiz:ended`
@@ -55,15 +68,15 @@ Connects to the socket with `role: "display"`. Shows:
 1. **Login** — `POST /api/auth/admin/login`, store the JWT, attach as bearer to all
    admin calls.
 2. **Session control panel** — create a session (`POST /api/sessions`, title +
-   auto-seed toggle), then buttons that call, in order: open registration
-   (`POST /api/sessions/:id/open-registration`), start
-   (`POST /api/sessions/:id/start`), next question
-   (`POST /api/sessions/:id/next-question`, disabled/hidden on the last question), end
-   (`POST /api/sessions/:id/end`). Disable buttons that aren't valid for the current
-   status (the API also enforces this server-side and returns 400 — surface that error).
-3. **Live dashboard** — participant count, current question index/total, a live ranked
-   table (`GET /api/sessions/:id/leaderboard`, or listen to `leaderboard:update` on the
-   socket joined with `role: "admin"`).
+   auto-seed toggle). Exactly two action buttons after that: **Start Quiz**
+   (`POST /api/sessions/:id/start`) and **End Quiz** (`POST /api/sessions/:id/end`). Do
+   not build a "next question" control — there isn't one. Disable Start once already
+   started, disable End until started; the API also enforces this server-side and
+   returns 400 on an invalid transition — surface that error.
+3. **Live dashboard** — participant count, total answered so far, a live ranked table
+   (`GET /api/sessions/:id/leaderboard`, or listen to `leaderboard:update` on the socket
+   joined with `role: "admin"`). This is how the admin judges when to hit End (e.g. once
+   most participants have finished, or ~1 minute has passed).
 4. **Participants & export** — table from `GET /api/sessions/:id/participants`, and a
    "Download CSV" button linking to `GET /api/sessions/:id/export.csv` (send the Bearer
    token; if using a plain `<a href>` you'll need to fetch it with auth headers and
@@ -80,26 +93,28 @@ Connects to the socket with `role: "display"`. Shows:
 |---|---|---|---|---|
 | GET | `/health` | none | — | `{ status: "ok" }` |
 | POST | `/api/auth/admin/login` | none | `{ email, password }` | `{ accessToken }` |
-| POST | `/api/sessions` | admin | `{ title, autoSeedQuestions? }` | QuizSession |
-| POST | `/api/sessions/:id/open-registration` | admin | — | QuizSession |
-| POST | `/api/sessions/:id/start` | admin | — | QuizSession |
-| POST | `/api/sessions/:id/next-question` | admin | — | QuizSession |
-| POST | `/api/sessions/:id/end` | admin | — | QuizSession |
-| GET | `/api/sessions/:id/leaderboard` | admin | — | `LeaderboardEntry[]` |
+| POST | `/api/sessions` | admin | `{ title, autoSeedQuestions? }` | QuizSession (`status: "draft"`) |
+| POST | `/api/sessions/:id/start` | admin | — | QuizSession (`draft` → `in_progress`) |
+| POST | `/api/sessions/:id/end` | admin | — | QuizSession (`in_progress` → `ended`) |
+| GET | `/api/sessions/:id/leaderboard` | admin | — | `LeaderboardEntry[]` (full ranked list) |
 | GET | `/api/sessions/:id/participants` | admin | — | `Participant[]` |
 | GET | `/api/sessions/:id/export.csv` | admin | — | CSV file |
-| GET | `/api/sessions/:id/state?participantId=` | none | — | `{ sessionId, title, status, currentQuestionIndex, totalQuestions, hasAnsweredCurrentQuestion }` |
-| GET | `/api/questions/:sessionId/current` | none | — | `{ id, text, order, timeLimitSeconds, dimension, options: [{key, text}], index, totalQuestions }` |
-| POST | `/api/participants/register` | none (rate-limited) | `{ sessionId, name, whatsappNumber }` | `{ participantId, sessionToken }` |
+| GET | `/api/sessions/:id/state?participantId=` | none | — | `{ sessionId, title, status, totalQuestions, answeredQuestionIds: string[]\|null }` |
+| GET | `/api/questions/:sessionId` | none | — | `SanitizedQuestion[]` (all 5 at once); 400 if session is still `draft` |
+| POST | `/api/participants/register` | none (rate-limited) | `{ sessionId, name, whatsappNumber }` | `{ participantId, sessionToken }`; 400 only if session already `ended` |
 | PATCH | `/api/participants/:id/onboarding` | sessionToken | `{ businessName?, businessCategory?, goal, goalOther? }` | Participant |
 | GET | `/api/participants/:id/rank` | none | — | `{ rank: number\|null, score }` |
-| POST | `/api/answers` | sessionToken | `{ questionId, selectedKey, timeTakenMs }` | Answer |
+| POST | `/api/answers` | sessionToken | `{ questionId, selectedKey, timeTakenMs }` | `{ success: true }` — any question in the session, any order, only while `in_progress` |
 | POST | `/api/participants/:id/analysis` | sessionToken | — | AnalysisReport (generates or returns cached) |
 | GET | `/api/participants/:id/analysis` | none | — | AnalysisReport or 404 |
 
+`SanitizedQuestion`: `{ id, text, order, timeLimitSeconds, dimension, options: [{key, text}] }`
+(no points/correct-answer info exposed).
+
 `goal` enum: `grow_customers` \| `grow_revenue` \| `other` (send `goalOther` when
 `other`). `selectedKey` enum: `A` \| `B` \| `C` \| `D`. `status` enum on QuizSession:
-`draft` \| `registration_open` \| `in_progress` \| `ended`.
+`draft` \| `in_progress` \| `ended` — that's the whole state machine, only two admin
+transitions exist.
 
 **AnalysisReport shape:**
 ```json
@@ -131,10 +146,10 @@ Connect with `io(SOCKET_URL + '/quiz')`, then immediately emit `join`.
 - `join` — `{ sessionId, participantId?, role: 'participant' | 'display' | 'admin' }`
 
 **Listen (server → client):**
-- `session:state` — `{ sessionId, title, status, currentQuestionIndex, totalQuestions, hasAnsweredCurrentQuestion }` — sent on join and every admin transition; drives which screen to show.
-- `question:new` — `{ question: {id, text, order, timeLimitSeconds, dimension, options}, index, totalQuestions, timeLimitSeconds, serverTimestamp }` — start the countdown from `serverTimestamp`, not `Date.now()` on the client.
+- `session:state` — `{ sessionId, title, status, totalQuestions, answeredQuestionIds }` — sent on join and every admin transition; drives which screen to show.
+- `questions:all` — `{ questions: SanitizedQuestion[], totalQuestions, serverTimestamp }` — sent once when the quiz starts (and to anyone joining mid-quiz or after it ends, so late joiners/refreshes still get the full set).
 - `leaderboard:update` — `{ top: [{participantId, name, businessName?, score, rank}], totalAnswered }` — debounced ~1s, top 10 only.
-- `quiz:ended` — `{}` — move participants/display to final screens.
+- `quiz:ended` — `{}` — move participants/display straight to the results screen.
 
 Answers are always submitted via the REST endpoint (`POST /api/answers`), never over the
 socket — the socket is read-only broadcast.
@@ -143,9 +158,11 @@ socket — the socket is read-only broadcast.
 
 - Mobile-first, big tap targets (this is used one-handed at an event, possibly with
   spotty wifi) — show clear loading/retry states on every network call.
-- Keep the "Analyze My Business" report screen the emotional high point — give it more
-  visual polish than the rest of the app.
-- Use a countdown that's visually obvious (ring or bar), since the time limit per
-  question is short (default 20s).
+- Keep the results screen (leaderboard + "Analyze My Business" report) the emotional
+  high point — give it more visual polish than the rest of the app, since it's the last
+  thing every participant sees.
+- The quiz itself is fast and self-paced — optimize the question screen for speed
+  (instant tap-to-submit-to-next, no artificial waiting between questions).
 - Handle reconnects gracefully: on socket reconnect, re-emit `join` and reconcile with
-  `session:state` rather than assuming client-side state is still correct.
+  `session:state` (and its `answeredQuestionIds`) rather than assuming client-side state
+  is still correct.

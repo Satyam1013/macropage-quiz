@@ -91,7 +91,10 @@ export class LeaderboardService {
   async getFullRankedList(
     sessionId: Types.ObjectId | string,
   ): Promise<LeaderboardEntry[]> {
-    const { top } = await this.computeLeaderboard(sessionId, Number.MAX_SAFE_INTEGER);
+    const { top } = await this.computeLeaderboard(
+      sessionId,
+      Number.MAX_SAFE_INTEGER,
+    );
     return top;
   }
 

@@ -44,10 +44,21 @@ export const ReportJsonSchema = SchemaFactory.createForClass(ReportJson);
 
 @Schema({ timestamps: false, collection: 'analysis_reports' })
 export class AnalysisReport {
-  @Prop({ type: SchemaTypes.ObjectId, ref: 'Participant', required: true, unique: true, index: true })
+  @Prop({
+    type: SchemaTypes.ObjectId,
+    ref: 'Participant',
+    required: true,
+    unique: true,
+    index: true,
+  })
   participantId: Types.ObjectId;
 
-  @Prop({ type: SchemaTypes.ObjectId, ref: 'QuizSession', required: true, index: true })
+  @Prop({
+    type: SchemaTypes.ObjectId,
+    ref: 'QuizSession',
+    required: true,
+    index: true,
+  })
   sessionId: Types.ObjectId;
 
   @Prop({ required: true, default: () => new Date() })

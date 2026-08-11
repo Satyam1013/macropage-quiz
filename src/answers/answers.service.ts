@@ -1,4 +1,8 @@
-import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { EventEmitter2 } from '@nestjs/event-emitter';
@@ -30,13 +34,18 @@ export class AnswersService {
     );
 
     if (session.status !== 'in_progress') {
-      throw new BadRequestException('This session is not currently in progress');
+      throw new BadRequestException(
+        'This session is not currently in progress',
+      );
     }
 
-    const currentQuestionId =
-      session.questionIds[session.currentQuestionIndex]?.toString();
-    if (!currentQuestionId || currentQuestionId !== dto.questionId) {
-      throw new BadRequestException('This is not the current active question');
+    const belongsToSession = session.questionIds.some(
+      (id) => id.toString() === dto.questionId,
+    );
+    if (!belongsToSession) {
+      throw new BadRequestException(
+        'This question is not part of this session',
+      );
     }
 
     const question = await this.questionsService.findById(dto.questionId);
@@ -64,7 +73,7 @@ export class AnswersService {
 
     this.eventEmitter.emit(ANSWER_CREATED_EVENT, {
       sessionId: session._id.toString(),
-    } as AnswerCreatedPayload);
+    });
 
     return { success: true };
   }

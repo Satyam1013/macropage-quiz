@@ -6,14 +6,13 @@ import {
   AnalysisReportDocument,
 } from './schemas/analysis-report.schema';
 import { Answer, AnswerDocument } from '../answers/schemas/answer.schema';
-import { Question, QuestionDocument } from '../questions/schemas/question.schema';
+import {
+  Question,
+  QuestionDocument,
+} from '../questions/schemas/question.schema';
 import { ParticipantDocument } from '../participants/schemas/participant.schema';
 import { AnthropicService } from './anthropic.service';
-import {
-  ARCHETYPES,
-  DIMENSION_ORDER,
-  TECH_SCORE_WEIGHTS,
-} from './archetypes';
+import { ARCHETYPES, DIMENSION_ORDER, TECH_SCORE_WEIGHTS } from './archetypes';
 import { QuestionDimension } from '../questions/schemas/question.schema';
 
 const MAX_POINTS_PER_QUESTION = 3;
@@ -31,8 +30,11 @@ export class AnalysisService {
   ) {}
 
   async getExisting(participantId: string): Promise<AnalysisReportDocument> {
-    const report = await this.analysisReportModel.findOne({ participantId }).exec();
-    if (!report) throw new NotFoundException('No analysis report generated yet');
+    const report = await this.analysisReportModel
+      .findOne({ participantId })
+      .exec();
+    if (!report)
+      throw new NotFoundException('No analysis report generated yet');
     return report;
   }
 

@@ -4,15 +4,33 @@ import type { OptionKey } from '../../questions/schemas/question.schema';
 
 export type AnswerDocument = Answer & Document;
 
-@Schema({ timestamps: { createdAt: true, updatedAt: false }, collection: 'answers' })
+@Schema({
+  timestamps: { createdAt: true, updatedAt: false },
+  collection: 'answers',
+})
 export class Answer {
-  @Prop({ type: SchemaTypes.ObjectId, ref: 'Participant', required: true, index: true })
+  @Prop({
+    type: SchemaTypes.ObjectId,
+    ref: 'Participant',
+    required: true,
+    index: true,
+  })
   participantId: Types.ObjectId;
 
-  @Prop({ type: SchemaTypes.ObjectId, ref: 'Question', required: true, index: true })
+  @Prop({
+    type: SchemaTypes.ObjectId,
+    ref: 'Question',
+    required: true,
+    index: true,
+  })
   questionId: Types.ObjectId;
 
-  @Prop({ type: SchemaTypes.ObjectId, ref: 'QuizSession', required: true, index: true })
+  @Prop({
+    type: SchemaTypes.ObjectId,
+    ref: 'QuizSession',
+    required: true,
+    index: true,
+  })
   sessionId: Types.ObjectId;
 
   @Prop({ required: true, enum: ['A', 'B', 'C', 'D'] })

@@ -51,18 +51,19 @@ See `.env.example`:
 
 1. Admin logs in: `POST /api/auth/admin/login`.
 2. Admin creates a session: `POST /api/sessions` (auto-seeds the 5 default
-   questions unless `autoSeedQuestions: false` is passed).
-3. Admin opens registration: `POST /api/sessions/:id/open-registration`.
-   Participants scan the QR code (`https://quiz.macropage.in/join?session=<id>`)
-   and hit `POST /api/participants/register`, then complete onboarding.
-4. Admin starts the quiz: `POST /api/sessions/:id/start` — broadcasts
-   question 1 to everyone connected.
-5. Admin advances through questions: `POST /api/sessions/:id/next-question`.
-6. Admin ends the quiz: `POST /api/sessions/:id/end` — freezes the
-   leaderboard and signals participants to show their final rank.
-7. Participants tap "Analyze My Business":
+   questions unless `autoSeedQuestions: false` is passed). Registration is
+   open immediately — no separate "open registration" step. Participants
+   scan the QR code (`https://quiz.macropage.in/join?session=<id>`), hit
+   `POST /api/participants/register`, complete onboarding, and wait.
+3. Admin starts the quiz: `POST /api/sessions/:id/start` — broadcasts all 5
+   questions to everyone connected at once; participants answer them
+   self-paced (`POST /api/answers` per question) and then wait.
+4. Admin ends the quiz whenever they choose (typically within ~1 minute):
+   `POST /api/sessions/:id/end` — freezes the leaderboard and moves
+   participants straight to their results screen (rank + leaderboard).
+5. Participants tap "Analyze My Business" on the results screen:
    `POST /api/participants/:id/analysis`.
-8. Admin exports the lead list: `GET /api/sessions/:id/export.csv`.
+6. Admin exports the lead list: `GET /api/sessions/:id/export.csv`.
 
 ## REST API
 
@@ -72,11 +73,11 @@ All routes are prefixed with `/api` (except `/health`).
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| POST | `/participants/register` | — | `{ sessionId, name, whatsappNumber }` → `{ participantId, sessionToken }` |
+| POST | `/participants/register` | — | `{ sessionId, name, whatsappNumber }` → `{ participantId, sessionToken }`; blocked only once the session has `ended` |
 | PATCH | `/participants/:id/onboarding` | sessionToken | `{ businessName?, businessCategory?, goal, goalOther? }` |
-| GET | `/sessions/:id/state` | — | `?participantId=` optional; current status, question index, has-answered flag |
-| GET | `/questions/:sessionId/current` | — | Active question, sanitized (no points) |
-| POST | `/answers` | sessionToken | `{ questionId, selectedKey, timeTakenMs }` |
+| GET | `/sessions/:id/state` | — | `?participantId=` optional; `{ status, totalQuestions, answeredQuestionIds }` |
+| GET | `/questions/:sessionId` | — | All 5 questions at once, sanitized (no points); 400 until the quiz has started |
+| POST | `/answers` | sessionToken | `{ questionId, selectedKey, timeTakenMs }` — any question belonging to the session, in any order, while `in_progress` |
 | GET | `/participants/:id/rank` | — | Current rank + score |
 | POST | `/participants/:id/analysis` | sessionToken | Generates (or returns cached) AI report |
 | GET | `/participants/:id/analysis` | — | Fetch existing report |
@@ -86,10 +87,8 @@ All routes are prefixed with `/api` (except `/health`).
 | Method | Path | Description |
 |---|---|---|
 | POST | `/auth/admin/login` | `{ email, password }` → `{ accessToken }` |
-| POST | `/sessions` | Create a session; auto-seeds the 5 default questions |
-| POST | `/sessions/:id/open-registration` | draft → registration_open |
-| POST | `/sessions/:id/start` | registration_open → in_progress, question 0 |
-| POST | `/sessions/:id/next-question` | Advance question index |
+| POST | `/sessions` | Create a session (`draft`); auto-seeds the 5 default questions; registration is open immediately |
+| POST | `/sessions/:id/start` | draft → in_progress; broadcasts all questions at once |
 | POST | `/sessions/:id/end` | in_progress → ended, freezes leaderboard |
 | GET | `/sessions/:id/leaderboard` | Full ranked list with scores |
 | GET | `/sessions/:id/participants` | Full participant list + onboarding data |
@@ -113,10 +112,11 @@ the projector screen.
 **Server → client**
 
 - `session:state` — full state snapshot, sent on join and on every transition
-- `question:new` — `{ question, index, totalQuestions, timeLimitSeconds, serverTimestamp }`
+- `questions:all` — `{ questions: [...], totalQuestions, serverTimestamp }`, sent once
+  when the quiz starts (and to anyone joining mid-quiz or after it ends)
 - `leaderboard:update` — `{ top: [{ participantId, name, businessName, score, rank }], totalAnswered }`,
   debounced to at most once per second per session
-- `quiz:ended` — final-rank screen trigger
+- `quiz:ended` — results-screen trigger
 
 Answers are always submitted over REST (`POST /answers`), never over the
 socket — the socket is read/broadcast only, which keeps the write path
@@ -124,9 +124,11 @@ simple and avoids double-submits.
 
 ## Data model
 
-- **QuizSession** — one live event run; `draft → registration_open →
-  in_progress → ended`, with `currentQuestionIndex` and an ordered
-  `questionIds` list.
+- **QuizSession** — one live event run; `draft → in_progress → ended`, with
+  an ordered `questionIds` list. Registration is open throughout `draft`
+  and `in_progress` (blocked only once `ended`); all questions are pushed
+  to participants at once when the quiz starts, answered self-paced, and
+  the admin ends the quiz whenever they choose.
 - **Question** — text, dimension (one of `growth_mindset`,
   `customer_relationship`, `strategic_thinking`, `investment_discipline`,
   `digital_readiness`), 4 options each worth 0–3 points.

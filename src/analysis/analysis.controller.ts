@@ -1,4 +1,11 @@
-import { Controller, ForbiddenException, Get, Param, Post, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  ForbiddenException,
+  Get,
+  Param,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { AnalysisService } from './analysis.service';
 import { SessionTokenGuard } from '../participants/guards/session-token.guard';
 import { CurrentParticipant } from '../participants/decorators/current-participant.decorator';

@@ -75,7 +75,9 @@ ${REPORT_JSON_SHAPE}`;
   ): Promise<{ parsed: GeneratedReportJson; raw: string }> {
     const prompt = this.buildPrompt(input);
 
-    const attempt = async (extra?: string): Promise<{ parsed: GeneratedReportJson; raw: string }> => {
+    const attempt = async (
+      extra?: string,
+    ): Promise<{ parsed: GeneratedReportJson; raw: string }> => {
       const response = await this.client.messages.create({
         model: this.model,
         max_tokens: 1024,

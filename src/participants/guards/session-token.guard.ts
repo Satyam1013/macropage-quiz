@@ -7,7 +7,10 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Request } from 'express';
-import { Participant, ParticipantDocument } from '../schemas/participant.schema';
+import {
+  Participant,
+  ParticipantDocument,
+} from '../schemas/participant.schema';
 
 export interface RequestWithParticipant extends Request {
   participant: ParticipantDocument;

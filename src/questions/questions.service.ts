@@ -22,7 +22,7 @@ export class QuestionsService {
 
   async seedDefaultQuestions(): Promise<Types.ObjectId[]> {
     const created = await this.questionModel.insertMany(DEFAULT_QUESTIONS);
-    return created.map((doc) => doc._id as Types.ObjectId);
+    return created.map((doc) => doc._id);
   }
 
   async findById(id: string | Types.ObjectId): Promise<QuestionDocument> {

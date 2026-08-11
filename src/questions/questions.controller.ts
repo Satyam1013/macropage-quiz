@@ -1,4 +1,4 @@
-import { Controller, Get, NotFoundException, Param } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Param } from '@nestjs/common';
 import { SessionsService } from '../sessions/sessions.service';
 import { QuestionsService } from './questions.service';
 
@@ -9,17 +9,13 @@ export class QuestionsController {
     private readonly questionsService: QuestionsService,
   ) {}
 
-  @Get(':sessionId/current')
-  async getCurrent(@Param('sessionId') sessionId: string) {
+  @Get(':sessionId')
+  async getAll(@Param('sessionId') sessionId: string) {
     const session = await this.sessionsService.findById(sessionId);
-    const question = await this.sessionsService.getCurrentQuestionDoc(session);
-    if (!question) {
-      throw new NotFoundException('No active question for this session');
+    if (session.status === 'draft') {
+      throw new BadRequestException('Quiz has not started yet');
     }
-    return {
-      ...this.questionsService.sanitize(question),
-      index: session.currentQuestionIndex,
-      totalQuestions: session.questionIds.length,
-    };
+    const questions = await this.sessionsService.getAllQuestionDocs(session);
+    return questions.map((q) => this.questionsService.sanitize(q));
   }
 }

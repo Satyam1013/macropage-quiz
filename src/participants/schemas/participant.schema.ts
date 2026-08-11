@@ -7,7 +7,12 @@ export type ParticipantDocument = Participant & Document;
 
 @Schema({ timestamps: false, collection: 'participants' })
 export class Participant {
-  @Prop({ type: SchemaTypes.ObjectId, ref: 'QuizSession', required: true, index: true })
+  @Prop({
+    type: SchemaTypes.ObjectId,
+    ref: 'QuizSession',
+    required: true,
+    index: true,
+  })
   sessionId: Types.ObjectId;
 
   @Prop({ required: true, trim: true })

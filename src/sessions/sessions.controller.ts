@@ -26,24 +26,10 @@ export class SessionsController {
   }
 
   @UseGuards(JwtAuthGuard)
-  @Post(':id/open-registration')
-  @HttpCode(HttpStatus.OK)
-  openRegistration(@Param('id') id: string) {
-    return this.sessionsService.openRegistration(id);
-  }
-
-  @UseGuards(JwtAuthGuard)
   @Post(':id/start')
   @HttpCode(HttpStatus.OK)
   start(@Param('id') id: string) {
     return this.sessionsService.start(id);
-  }
-
-  @UseGuards(JwtAuthGuard)
-  @Post(':id/next-question')
-  @HttpCode(HttpStatus.OK)
-  nextQuestion(@Param('id') id: string) {
-    return this.sessionsService.nextQuestion(id);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -78,7 +64,10 @@ export class SessionsController {
   }
 
   @Get(':id/state')
-  getState(@Param('id') id: string, @Query('participantId') participantId?: string) {
+  getState(
+    @Param('id') id: string,
+    @Query('participantId') participantId?: string,
+  ) {
     return this.sessionsService.getState(id, participantId);
   }
 }

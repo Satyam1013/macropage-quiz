@@ -8,7 +8,10 @@ import {
   WebSocketServer,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
-import { SessionsService, SESSION_STATE_CHANGED_EVENT } from '../sessions/sessions.service';
+import {
+  SessionsService,
+  SESSION_STATE_CHANGED_EVENT,
+} from '../sessions/sessions.service';
 import type { SessionStateChangedPayload } from '../sessions/sessions.service';
 import { QuestionsService } from '../questions/questions.service';
 import { LeaderboardService } from '../leaderboard/leaderboard.service';
@@ -57,8 +60,8 @@ export class QuizGateway {
     );
     client.emit('session:state', state);
 
-    if (state.status === 'in_progress') {
-      await this.emitCurrentQuestion(client, data.sessionId);
+    if (state.status === 'in_progress' || state.status === 'ended') {
+      await this.emitAllQuestions(client, data.sessionId);
     }
   }
 
@@ -68,7 +71,7 @@ export class QuizGateway {
     this.server.to(payload.sessionId).emit('session:state', state);
 
     if (state.status === 'in_progress') {
-      await this.emitCurrentQuestion(
+      await this.emitAllQuestions(
         this.server.to(payload.sessionId),
         payload.sessionId,
       );
@@ -85,19 +88,17 @@ export class QuizGateway {
     this.scheduleLeaderboardBroadcast(payload.sessionId);
   }
 
-  private async emitCurrentQuestion(
+  private async emitAllQuestions(
     target: { emit: (event: string, payload: unknown) => unknown },
     sessionId: string,
   ) {
     const session = await this.sessionsService.findById(sessionId);
-    const question = await this.sessionsService.getCurrentQuestionDoc(session);
-    if (!question) return;
+    const questions = await this.sessionsService.getAllQuestionDocs(session);
+    if (questions.length === 0) return;
 
-    target.emit('question:new', {
-      question: this.questionsService.sanitize(question),
-      index: session.currentQuestionIndex,
-      totalQuestions: session.questionIds.length,
-      timeLimitSeconds: question.timeLimitSeconds,
+    target.emit('questions:all', {
+      questions: questions.map((q) => this.questionsService.sanitize(q)),
+      totalQuestions: questions.length,
       serverTimestamp: Date.now(),
     });
   }
@@ -114,11 +115,14 @@ export class QuizGateway {
   }
 
   private async broadcastLeaderboard(sessionId: string) {
-    const { top, totalAnswered } = await this.leaderboardService.computeLeaderboard(
-      sessionId,
-      LEADERBOARD_TOP_N,
-    );
-    this.server.to(sessionId).emit('leaderboard:update', { top, totalAnswered });
+    const { top, totalAnswered } =
+      await this.leaderboardService.computeLeaderboard(
+        sessionId,
+        LEADERBOARD_TOP_N,
+      );
+    this.server
+      .to(sessionId)
+      .emit('leaderboard:update', { top, totalAnswered });
   }
 
   private displayRoom(sessionId: string) {

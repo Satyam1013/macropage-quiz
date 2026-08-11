@@ -1,11 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, SchemaTypes, Types } from 'mongoose';
 
-export type QuizSessionStatus =
-  | 'draft'
-  | 'registration_open'
-  | 'in_progress'
-  | 'ended';
+export type QuizSessionStatus = 'draft' | 'in_progress' | 'ended';
 
 export type QuizSessionDocument = QuizSession & Document;
 
@@ -16,13 +12,10 @@ export class QuizSession {
 
   @Prop({
     required: true,
-    enum: ['draft', 'registration_open', 'in_progress', 'ended'],
+    enum: ['draft', 'in_progress', 'ended'],
     default: 'draft',
   })
   status: QuizSessionStatus;
-
-  @Prop({ required: true, default: -1 })
-  currentQuestionIndex: number;
 
   @Prop({ type: [SchemaTypes.ObjectId], ref: 'Question', default: [] })
   questionIds: Types.ObjectId[];

@@ -6,8 +6,14 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { QuizSession, QuizSessionDocument } from './schemas/quiz-session.schema';
-import { Question, QuestionDocument } from '../questions/schemas/question.schema';
+import {
+  QuizSession,
+  QuizSessionDocument,
+} from './schemas/quiz-session.schema';
+import {
+  Question,
+  QuestionDocument,
+} from '../questions/schemas/question.schema';
 import {
   Participant,
   ParticipantDocument,
@@ -48,33 +54,19 @@ export class SessionsService {
     let questionIds: Types.ObjectId[] = [];
     if (dto.autoSeedQuestions !== false) {
       const created = await this.questionModel.insertMany(DEFAULT_QUESTIONS);
-      questionIds = created.map((doc) => doc._id as Types.ObjectId);
+      questionIds = created.map((doc) => doc._id);
     }
 
     return this.sessionModel.create({
       title: dto.title,
       status: 'draft',
-      currentQuestionIndex: -1,
       questionIds,
     });
   }
 
-  async openRegistration(id: string): Promise<QuizSessionDocument> {
-    const session = await this.findById(id);
-    if (session.status !== 'draft') {
-      throw new BadRequestException(
-        `Cannot open registration from status "${session.status}"`,
-      );
-    }
-    session.status = 'registration_open';
-    await session.save();
-    this.emitStateChanged(id);
-    return session;
-  }
-
   async start(id: string): Promise<QuizSessionDocument> {
     const session = await this.findById(id);
-    if (session.status !== 'registration_open') {
+    if (session.status !== 'draft') {
       throw new BadRequestException(
         `Cannot start quiz from status "${session.status}"`,
       );
@@ -83,26 +75,7 @@ export class SessionsService {
       throw new BadRequestException('Session has no questions configured');
     }
     session.status = 'in_progress';
-    session.currentQuestionIndex = 0;
     session.startedAt = new Date();
-    await session.save();
-    this.emitStateChanged(id);
-    return session;
-  }
-
-  async nextQuestion(id: string): Promise<QuizSessionDocument> {
-    const session = await this.findById(id);
-    if (session.status !== 'in_progress') {
-      throw new BadRequestException(
-        `Cannot advance question from status "${session.status}"`,
-      );
-    }
-    if (session.currentQuestionIndex >= session.questionIds.length - 1) {
-      throw new BadRequestException(
-        'Already on the final question — call /end instead',
-      );
-    }
-    session.currentQuestionIndex += 1;
     await session.save();
     this.emitStateChanged(id);
     return session;
@@ -111,7 +84,9 @@ export class SessionsService {
   async end(id: string): Promise<QuizSessionDocument> {
     const session = await this.findById(id);
     if (session.status !== 'in_progress') {
-      throw new BadRequestException(`Cannot end quiz from status "${session.status}"`);
+      throw new BadRequestException(
+        `Cannot end quiz from status "${session.status}"`,
+      );
     }
     session.status = 'ended';
     session.endedAt = new Date();
@@ -123,35 +98,36 @@ export class SessionsService {
   private emitStateChanged(sessionId: string) {
     this.eventEmitter.emit(SESSION_STATE_CHANGED_EVENT, {
       sessionId,
-    } as SessionStateChangedPayload);
+    });
   }
 
-  async getCurrentQuestionDoc(session: QuizSessionDocument): Promise<QuestionDocument | null> {
-    if (session.currentQuestionIndex < 0) return null;
-    const questionId = session.questionIds[session.currentQuestionIndex];
-    if (!questionId) return null;
-    return this.questionModel.findById(questionId).exec();
+  async getAllQuestionDocs(
+    session: QuizSessionDocument,
+  ): Promise<QuestionDocument[]> {
+    return this.questionModel
+      .find({ _id: { $in: session.questionIds } })
+      .sort({ order: 1 })
+      .exec();
   }
 
   async getState(sessionId: string, participantId?: string) {
     const session = await this.findById(sessionId);
-    let hasAnsweredCurrentQuestion: boolean | null = null;
+    let answeredQuestionIds: string[] | null = null;
 
-    if (participantId && session.currentQuestionIndex >= 0) {
-      const questionId = session.questionIds[session.currentQuestionIndex];
-      const existing = await this.answerModel
-        .findOne({ participantId, questionId })
+    if (participantId && session.status !== 'draft') {
+      const answers = await this.answerModel
+        .find({ participantId, sessionId: session._id })
+        .select('questionId')
         .exec();
-      hasAnsweredCurrentQuestion = !!existing;
+      answeredQuestionIds = answers.map((a) => a.questionId.toString());
     }
 
     return {
       sessionId: session._id.toString(),
       title: session.title,
       status: session.status,
-      currentQuestionIndex: session.currentQuestionIndex,
       totalQuestions: session.questionIds.length,
-      hasAnsweredCurrentQuestion,
+      answeredQuestionIds,
     };
   }
 

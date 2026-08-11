@@ -39,7 +39,11 @@ export const DEFAULT_QUESTIONS: SeedQuestion[] = [
     timeLimitSeconds: 20,
     dimension: 'customer_relationship',
     options: [
-      { key: 'A', text: "Wait, they'll come back if they need something", points: 0 },
+      {
+        key: 'A',
+        text: "Wait, they'll come back if they need something",
+        points: 0,
+      },
       { key: 'B', text: 'Message them personally to check in', points: 3 },
       { key: 'C', text: 'Analyze what changed in your offering', points: 2 },
       { key: 'D', text: 'Launch a discount to win them back', points: 1 },
@@ -54,7 +58,11 @@ export const DEFAULT_QUESTIONS: SeedQuestion[] = [
       { key: 'A', text: 'Match their price immediately', points: 1 },
       { key: 'B', text: 'Do nothing, my customers are loyal', points: 0 },
       { key: 'C', text: 'Double down on service/experience', points: 2 },
-      { key: 'D', text: "Study what they're doing differently and adjust", points: 3 },
+      {
+        key: 'D',
+        text: "Study what they're doing differently and adjust",
+        points: 3,
+      },
     ],
   },
   {
