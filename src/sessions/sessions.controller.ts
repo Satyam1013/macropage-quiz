@@ -26,6 +26,12 @@ export class SessionsController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Get()
+  findAll() {
+    return this.sessionsService.findAll();
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Post(':id/start')
   @HttpCode(HttpStatus.OK)
   start(@Param('id') id: string) {

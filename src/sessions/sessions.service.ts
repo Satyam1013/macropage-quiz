@@ -50,6 +50,10 @@ export class SessionsService {
     return session;
   }
 
+  async findAll(): Promise<QuizSessionDocument[]> {
+    return this.sessionModel.find().sort({ createdAt: -1 }).exec();
+  }
+
   async create(dto: CreateSessionDto): Promise<QuizSessionDocument> {
     let questionIds: Types.ObjectId[] = [];
     if (dto.autoSeedQuestions !== false) {

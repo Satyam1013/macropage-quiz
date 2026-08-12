@@ -67,17 +67,22 @@ Connects to the socket with `role: "display"`. Shows:
 ### 3. Admin console (laptop, desktop layout)
 1. **Login** — `POST /api/auth/admin/login`, store the JWT, attach as bearer to all
    admin calls.
-2. **Session control panel** — create a session (`POST /api/sessions`, title +
+2. **Session list / history** — landing screen after login. `GET /api/sessions` returns
+   every session ever created (newest first) with its `status`, so past events stay
+   browsable — clicking an old (`ended`) session opens its leaderboard/participants/CSV
+   export read-only; clicking a `draft` one resumes the control panel below. A "Create
+   New Session" action calls `POST /api/sessions`.
+3. **Session control panel** — create a session (`POST /api/sessions`, title +
    auto-seed toggle). Exactly two action buttons after that: **Start Quiz**
    (`POST /api/sessions/:id/start`) and **End Quiz** (`POST /api/sessions/:id/end`). Do
    not build a "next question" control — there isn't one. Disable Start once already
    started, disable End until started; the API also enforces this server-side and
    returns 400 on an invalid transition — surface that error.
-3. **Live dashboard** — participant count, total answered so far, a live ranked table
+4. **Live dashboard** — participant count, total answered so far, a live ranked table
    (`GET /api/sessions/:id/leaderboard`, or listen to `leaderboard:update` on the socket
    joined with `role: "admin"`). This is how the admin judges when to hit End (e.g. once
    most participants have finished, or ~1 minute has passed).
-4. **Participants & export** — table from `GET /api/sessions/:id/participants`, and a
+5. **Participants & export** — table from `GET /api/sessions/:id/participants`, and a
    "Download CSV" button linking to `GET /api/sessions/:id/export.csv` (send the Bearer
    token; if using a plain `<a href>` you'll need to fetch it with auth headers and
    trigger a blob download instead of a direct link, since the browser won't attach the
@@ -94,6 +99,7 @@ Connects to the socket with `role: "display"`. Shows:
 | GET | `/health` | none | — | `{ status: "ok" }` |
 | POST | `/api/auth/admin/login` | none | `{ email, password }` | `{ accessToken }` |
 | POST | `/api/sessions` | admin | `{ title, autoSeedQuestions? }` | QuizSession (`status: "draft"`) |
+| GET | `/api/sessions` | admin | — | `QuizSession[]`, newest first — full history, not just the active one |
 | POST | `/api/sessions/:id/start` | admin | — | QuizSession (`draft` → `in_progress`) |
 | POST | `/api/sessions/:id/end` | admin | — | QuizSession (`in_progress` → `ended`) |
 | GET | `/api/sessions/:id/leaderboard` | admin | — | `LeaderboardEntry[]` (full ranked list) |

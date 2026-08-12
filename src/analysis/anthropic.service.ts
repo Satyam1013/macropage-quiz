@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Anthropic from '@anthropic-ai/sdk';
 
@@ -101,9 +101,18 @@ ${REPORT_JSON_SHAPE}`;
       this.logger.warn(
         `First analysis generation attempt failed, retrying once: ${(err as Error).message}`,
       );
-      return attempt(
-        'Your previous response was not valid JSON matching the required shape. Respond again with ONLY valid strict JSON, nothing else.',
-      );
+      try {
+        return await attempt(
+          'Your previous response was not valid JSON matching the required shape. Respond again with ONLY valid strict JSON, nothing else.',
+        );
+      } catch (retryErr) {
+        this.logger.error(
+          `Analysis generation failed after retry: ${(retryErr as Error).message}`,
+        );
+        throw new ServiceUnavailableException(
+          'Could not generate the business analysis report right now — please try again in a moment',
+        );
+      }
     }
   }
 

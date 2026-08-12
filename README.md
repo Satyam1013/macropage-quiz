@@ -88,6 +88,7 @@ All routes are prefixed with `/api` (except `/health`).
 |---|---|---|
 | POST | `/auth/admin/login` | `{ email, password }` → `{ accessToken }` |
 | POST | `/sessions` | Create a session (`draft`); auto-seeds the 5 default questions; registration is open immediately |
+| GET | `/sessions` | List all sessions (past + current), newest first — for browsing quiz history |
 | POST | `/sessions/:id/start` | draft → in_progress; broadcasts all questions at once |
 | POST | `/sessions/:id/end` | in_progress → ended, freezes leaderboard |
 | GET | `/sessions/:id/leaderboard` | Full ranked list with scores |
@@ -128,7 +129,10 @@ simple and avoids double-submits.
   an ordered `questionIds` list. Registration is open throughout `draft`
   and `in_progress` (blocked only once `ended`); all questions are pushed
   to participants at once when the quiz starts, answered self-paced, and
-  the admin ends the quiz whenever they choose.
+  the admin ends the quiz whenever they choose. Sessions are never
+  deleted — every `Participant`, `Answer`, and `AnalysisReport` carries its
+  `sessionId`, so past events stay fully queryable via `GET /sessions` (list)
+  and the existing per-session leaderboard/participants/export routes.
 - **Question** — text, dimension (one of `growth_mindset`,
   `customer_relationship`, `strategic_thinking`, `investment_discipline`,
   `digital_readiness`), 4 options each worth 0–3 points.
