@@ -41,6 +41,11 @@ export class Participant {
 
   @Prop()
   onboardingCompletedAt?: Date;
+
+  // This participant's personal, randomly-assigned mindset question set (one
+  // per dimension), assigned lazily on first fetch and reused after that.
+  @Prop({ type: [SchemaTypes.ObjectId], ref: 'Question', default: [] })
+  assignedQuestionIds: Types.ObjectId[];
 }
 
 export const ParticipantSchema = SchemaFactory.createForClass(Participant);

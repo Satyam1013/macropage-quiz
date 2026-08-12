@@ -20,8 +20,13 @@ import {
 } from '../participants/schemas/participant.schema';
 import { Answer, AnswerDocument } from '../answers/schemas/answer.schema';
 import { CreateSessionDto } from './dto/create-session.dto';
-import { DEFAULT_QUESTIONS } from '../questions/seed-questions';
 import { LeaderboardService } from '../leaderboard/leaderboard.service';
+import { DIMENSION_ORDER } from '../analysis/archetypes';
+
+// Every participant is always assigned exactly one question per mindset
+// dimension (see QuestionsService.assignRandomMindsetSet), independent of
+// session.questionIds — which now holds only the session's trivia picks.
+const MINDSET_QUESTIONS_PER_PARTICIPANT = DIMENSION_ORDER.length;
 
 export const SESSION_STATE_CHANGED_EVENT = 'session.state-changed';
 
@@ -55,11 +60,10 @@ export class SessionsService {
   }
 
   async create(dto: CreateSessionDto): Promise<QuizSessionDocument> {
-    let questionIds: Types.ObjectId[] = [];
-    if (dto.autoSeedQuestions !== false) {
-      const created = await this.questionModel.insertMany(DEFAULT_QUESTIONS);
-      questionIds = created.map((doc) => doc._id);
-    }
+    // Mindset questions are no longer session-scoped: every participant gets
+    // their own random pick from the global mindset bank (see
+    // QuestionsService), so session.questionIds only ever holds trivia picks.
+    const questionIds: Types.ObjectId[] = [];
 
     if (dto.triviaQuestionIds?.length) {
       const trivia = await this.questionModel
@@ -98,8 +102,13 @@ export class SessionsService {
         `Cannot start quiz from status "${session.status}"`,
       );
     }
-    if (session.questionIds.length === 0) {
-      throw new BadRequestException('Session has no questions configured');
+    const mindsetBankCount = await this.questionModel.countDocuments({
+      type: 'mindset',
+    });
+    if (mindsetBankCount === 0) {
+      throw new BadRequestException(
+        'The mindset question bank is empty — call POST /api/questions/mindset/seed first',
+      );
     }
     session.status = 'in_progress';
     session.startedAt = new Date();
@@ -128,23 +137,6 @@ export class SessionsService {
     });
   }
 
-  async getAllQuestionDocs(
-    session: QuizSessionDocument,
-  ): Promise<QuestionDocument[]> {
-    const questions = await this.questionModel
-      .find({ _id: { $in: session.questionIds } })
-      .exec();
-    const byId = new Map(questions.map((q) => [q._id.toString(), q]));
-    // Preserve the order questions were added to the session (mindset first,
-    // then trivia) rather than each question's own bank-relative `order`.
-    const ordered: QuestionDocument[] = [];
-    for (const id of session.questionIds) {
-      const question = byId.get(id.toString());
-      if (question) ordered.push(question);
-    }
-    return ordered;
-  }
-
   async getState(sessionId: string, participantId?: string) {
     const session = await this.findById(sessionId);
     let answeredQuestionIds: string[] | null = null;
@@ -161,7 +153,8 @@ export class SessionsService {
       sessionId: session._id.toString(),
       title: session.title,
       status: session.status,
-      totalQuestions: session.questionIds.length,
+      totalQuestions:
+        MINDSET_QUESTIONS_PER_PARTICIPANT + session.questionIds.length,
       answeredQuestionIds,
     };
   }

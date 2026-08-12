@@ -1,17 +1,21 @@
 # MACROPAGE Quiz Backend
 
 Backend for a live, in-person business quiz used at a MACROPAGE stage event.
-~100–110 small-business owners scan a QR code, register, answer a mix of
-5 mindset-based questions and optional trivia questions on their phones,
-watch a live leaderboard on a projector, and finish with an AI-generated
-"Analyze My Business" report. An admin controls the quiz flow from a laptop.
+~100–110 small-business owners scan a QR code, register, and each answers
+their own randomly-assigned set of 5 mindset questions (one per business
+dimension, drawn from a larger bank so no two people necessarily see the
+same wording) plus an optional shared trivia round, all on their phones.
+They watch a live leaderboard on a projector and finish with an
+AI-generated "Analyze My Business" report based on their mindset answers.
+An admin controls the quiz flow from a laptop.
 
 ## Tech stack
 
 - NestJS (TypeScript)
 - MongoDB + Mongoose
 - Socket.IO (`@nestjs/websockets` + `@nestjs/platform-socket.io`) for
-  real-time question push, live leaderboard, and state sync
+  live leaderboard and quiz-state sync (question content itself is fetched
+  per-participant over REST, since it's personalized — see below)
 - JWT admin auth (`@nestjs/jwt`) — participants use a lightweight bearer
   session token issued at registration, no password
 - `class-validator` / `class-transformer` for DTO validation
@@ -50,26 +54,32 @@ See `.env.example`:
 ## Running a live event
 
 1. Admin logs in: `POST /api/auth/admin/login`.
-2. (One-time, or whenever the bank needs refreshing) Admin seeds the trivia
-   bank: `POST /api/questions/trivia/seed` — idempotent, inserts the 50
-   trivia questions only if none exist yet. Browse them with
-   `GET /api/questions/trivia/bank`.
-3. Admin creates a session: `POST /api/sessions` (auto-seeds the 5 default
-   mindset questions unless `autoSeedQuestions: false` is passed, and
-   optionally appends trivia via `triviaQuestionIds` — a hand-picked, ordered
-   list — or `triviaCount` — a random sample from the bank). Registration is
-   open immediately — no separate "open registration" step. Participants
-   scan the QR code (`https://quiz.macropage.in/join?session=<id>`), hit
+2. (One-time, or whenever a bank needs refreshing) Admin seeds the question
+   banks — both are idempotent, safe to call more than once:
+   `POST /api/questions/mindset/seed` (15 questions, 3 per dimension) and
+   `POST /api/questions/trivia/seed` (50 questions). Browse either with the
+   matching `GET .../bank` route.
+3. Admin creates a session: `POST /api/sessions` — optionally appends a
+   shared trivia round via `triviaQuestionIds` (a hand-picked, ordered list)
+   or `triviaCount` (a random sample from the bank). Mindset questions are
+   *not* configured here — they're assigned per participant, not per
+   session (see below). Registration is open immediately — no separate
+   "open registration" step. Participants scan the QR code
+   (`https://quiz.macropage.in/join?session=<id>`), hit
    `POST /api/participants/register`, complete onboarding, and wait.
-4. Admin starts the quiz: `POST /api/sessions/:id/start` — broadcasts every
-   question in the session (mindset + trivia, in the order configured) to
-   everyone connected at once; participants answer them self-paced
-   (`POST /api/answers` per question) and then wait.
+4. Admin starts the quiz: `POST /api/sessions/:id/start`. Each participant
+   then calls `GET /api/questions/:sessionId` (bearer sessionToken) to fetch
+   *their own* question set: 5 mindset questions randomly assigned one per
+   dimension the first time they ask (and reused after that), plus the
+   session's shared trivia questions, if any. Different participants likely
+   see different mindset wording for the same dimension. They answer
+   self-paced (`POST /api/answers` per question) and then wait.
 5. Admin ends the quiz whenever they choose (typically within ~1 minute):
    `POST /api/sessions/:id/end` — freezes the leaderboard and moves
    participants straight to their results screen (rank + leaderboard).
 6. Participants tap "Analyze My Business" on the results screen:
-   `POST /api/participants/:id/analysis`.
+   `POST /api/participants/:id/analysis` — built from their 5 personal
+   mindset answers only (trivia never factors into it).
 7. Admin exports the lead list: `GET /api/sessions/:id/export.csv`.
 
 ## REST API
@@ -83,8 +93,8 @@ All routes are prefixed with `/api` (except `/health`).
 | POST | `/participants/register` | — | `{ sessionId, name, whatsappNumber }` → `{ participantId, sessionToken }`; blocked only once the session has `ended` |
 | PATCH | `/participants/:id/onboarding` | sessionToken | `{ businessName?, businessCategory?, goal, goalOther? }` |
 | GET | `/sessions/:id/state` | — | `?participantId=` optional; `{ status, totalQuestions, answeredQuestionIds }` |
-| GET | `/questions/:sessionId` | — | All of the session's questions at once (mindset + trivia), sanitized (no points); 400 until the quiz has started |
-| POST | `/answers` | sessionToken | `{ questionId, selectedKey, timeTakenMs }` — any question belonging to the session, in any order, while `in_progress` |
+| GET | `/questions/:sessionId` | sessionToken | This participant's personal question set: 5 randomly-assigned mindset questions (one per dimension, assigned on first call and reused after) + the session's shared trivia questions, sanitized (no points); 400 until the quiz has started |
+| POST | `/answers` | sessionToken | `{ questionId, selectedKey, timeTakenMs }` — any question belonging to your personal set or the session's trivia round, in any order, while `in_progress` |
 | GET | `/participants/:id/rank` | — | Current rank + score |
 | POST | `/participants/:id/analysis` | sessionToken | Generates (or returns cached) AI report |
 | GET | `/participants/:id/analysis` | — | Fetch existing report |
@@ -94,11 +104,13 @@ All routes are prefixed with `/api` (except `/health`).
 | Method | Path | Description |
 |---|---|---|
 | POST | `/auth/admin/login` | `{ email, password }` → `{ accessToken }` |
+| POST | `/questions/mindset/seed` | Idempotent: inserts the 15-question mindset bank (3 per dimension) if none exist yet |
+| GET | `/questions/mindset/bank` | List the full mindset bank, grouped implicitly by `dimension` |
 | POST | `/questions/trivia/seed` | Idempotent: inserts the 50 trivia questions if none exist yet |
 | GET | `/questions/trivia/bank` | List the full trivia bank, incl. `correctKey`, for picking questions |
-| POST | `/sessions` | Create a session (`draft`); auto-seeds the 5 default mindset questions; optionally append trivia via `triviaQuestionIds` (ordered pick) or `triviaCount` (random sample); registration is open immediately |
+| POST | `/sessions` | Create a session (`draft`); optionally append a shared trivia round via `triviaQuestionIds` (ordered pick) or `triviaCount` (random sample) — mindset questions are assigned per participant, not configured here; registration is open immediately |
 | GET | `/sessions` | List all sessions (past + current), newest first — for browsing quiz history |
-| POST | `/sessions/:id/start` | draft → in_progress; broadcasts all questions at once |
+| POST | `/sessions/:id/start` | draft → in_progress; requires the mindset bank to be seeded |
 | POST | `/sessions/:id/end` | in_progress → ended, freezes leaderboard |
 | GET | `/sessions/:id/leaderboard` | Full ranked list with scores |
 | GET | `/sessions/:id/participants` | Full participant list + onboarding data |
@@ -122,38 +134,46 @@ the projector screen.
 **Server → client**
 
 - `session:state` — full state snapshot, sent on join and on every transition
-- `questions:all` — `{ questions: [...], totalQuestions, serverTimestamp }`, sent once
-  when the quiz starts (and to anyone joining mid-quiz or after it ends)
 - `leaderboard:update` — `{ top: [{ participantId, name, businessName, score, rank }], totalAnswered }`,
   debounced to at most once per second per session
 - `quiz:ended` — results-screen trigger
 
-Answers are always submitted over REST (`POST /answers`), never over the
-socket — the socket is read/broadcast only, which keeps the write path
+There's no socket event carrying question content — since each participant's
+set is personalized, question content is always fetched per-participant over
+REST (`GET /questions/:sessionId`, bearer-authed) once the client sees
+`session:state.status` become `in_progress`. Answers are likewise always
+submitted over REST (`POST /answers`), never over the socket — the socket is
+read/broadcast-only (state sync + leaderboard), which keeps the write path
 simple and avoids double-submits.
 
 ## Data model
 
 - **QuizSession** — one live event run; `draft → in_progress → ended`, with
-  an ordered `questionIds` list. Registration is open throughout `draft`
-  and `in_progress` (blocked only once `ended`); all questions are pushed
-  to participants at once when the quiz starts, answered self-paced, and
-  the admin ends the quiz whenever they choose. Sessions are never
-  deleted — every `Participant`, `Answer`, and `AnalysisReport` carries its
-  `sessionId`, so past events stay fully queryable via `GET /sessions` (list)
-  and the existing per-session leaderboard/participants/export routes.
+  an ordered `questionIds` list that holds *only* the session's shared
+  trivia picks (mindset questions are never session-scoped — see below).
+  Registration is open throughout `draft` and `in_progress` (blocked only
+  once `ended`); the admin starts and ends the quiz, participants answer
+  self-paced in between. Sessions are never deleted — every `Participant`,
+  `Answer`, and `AnalysisReport` carries its `sessionId`, so past events
+  stay fully queryable via `GET /sessions` (list) and the existing
+  per-session leaderboard/participants/export routes.
 - **Question** — `type: 'mindset' | 'trivia'`, text, 4 options. Mindset
   questions carry a `dimension` (one of `growth_mindset`,
   `customer_relationship`, `strategic_thinking`, `investment_discipline`,
   `digital_readiness`) with options worth 0–3 points each, feeding the
-  archetype/`techScore` analysis. Trivia questions have no dimension — one
-  option worth full points (correct), the rest worth 0 — and count toward
-  the leaderboard score only, not the AI analysis. The 50-question trivia
-  bank is seeded once (`POST /questions/trivia/seed`) and reused across
-  sessions; a session picks a subset of it at creation time.
+  archetype/`techScore` analysis; the bank holds 3 variants per dimension so
+  participants can get different specific wording. Trivia questions have no
+  dimension — one option worth full points (correct), the rest worth 0 —
+  and count toward the leaderboard score only, not the AI analysis. Both
+  banks are seeded once (`POST /questions/mindset/seed`,
+  `POST /questions/trivia/seed`) and reused globally; a session only ever
+  picks a trivia subset at creation time.
 - **Participant** — registers into a session with just a name + WhatsApp
   number; gets a `sessionToken` used as a bearer token for every
-  authenticated follow-up call.
+  authenticated follow-up call, and an `assignedQuestionIds` array holding
+  their personal, randomly-picked mindset question set (one per dimension) —
+  assigned on their first `GET /questions/:sessionId` call and reused after
+  that, so it's stable across reloads.
 - **Answer** — one per `(participantId, questionId)`, enforced by a unique
   index.
 - **AnalysisReport** — cached per participant; dimension scores, a
@@ -162,9 +182,10 @@ simple and avoids double-submits.
 
 ## Scoring & the AI report
 
-1. Each dimension's score is the earned points on its one mindset question,
-   normalized to 0–100. Trivia answers are excluded from this calculation
-   entirely (they still count toward leaderboard score).
+1. Each dimension's score is the earned points on the participant's one
+   assigned question for that dimension, normalized to 0–100. Trivia answers
+   are excluded from this calculation entirely (they still count toward
+   leaderboard score).
 2. `techScore` is a weighted average across all five dimensions, weighted
    toward `digital_readiness`.
 3. The archetype is picked from whichever dimension scored highest.

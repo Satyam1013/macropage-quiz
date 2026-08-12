@@ -1,5 +1,4 @@
 import {
-  IsBoolean,
   IsInt,
   IsMongoId,
   IsOptional,
@@ -13,10 +12,6 @@ export class CreateSessionDto {
   @IsString()
   @MinLength(3)
   title: string;
-
-  @IsOptional()
-  @IsBoolean()
-  autoSeedQuestions?: boolean = true;
 
   // Explicit pick of trivia bank question ids, in display order. Takes
   // priority over triviaCount if both are given.

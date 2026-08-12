@@ -39,13 +39,14 @@ export class AnswersService {
       );
     }
 
+    const belongsToParticipant = participant.assignedQuestionIds?.some(
+      (id) => id.toString() === dto.questionId,
+    );
     const belongsToSession = session.questionIds.some(
       (id) => id.toString() === dto.questionId,
     );
-    if (!belongsToSession) {
-      throw new BadRequestException(
-        'This question is not part of this session',
-      );
+    if (!belongsToParticipant && !belongsToSession) {
+      throw new BadRequestException('This question is not part of your quiz');
     }
 
     const question = await this.questionsService.findById(dto.questionId);

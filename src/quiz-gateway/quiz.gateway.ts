@@ -13,7 +13,6 @@ import {
   SESSION_STATE_CHANGED_EVENT,
 } from '../sessions/sessions.service';
 import type { SessionStateChangedPayload } from '../sessions/sessions.service';
-import { QuestionsService } from '../questions/questions.service';
 import { LeaderboardService } from '../leaderboard/leaderboard.service';
 import { ANSWER_CREATED_EVENT } from '../answers/answers.service';
 import type { AnswerCreatedPayload } from '../answers/answers.service';
@@ -40,7 +39,6 @@ export class QuizGateway {
 
   constructor(
     private readonly sessionsService: SessionsService,
-    private readonly questionsService: QuestionsService,
     private readonly leaderboardService: LeaderboardService,
   ) {}
 
@@ -59,23 +57,12 @@ export class QuizGateway {
       data.participantId,
     );
     client.emit('session:state', state);
-
-    if (state.status === 'in_progress' || state.status === 'ended') {
-      await this.emitAllQuestions(client, data.sessionId);
-    }
   }
 
   @OnEvent(SESSION_STATE_CHANGED_EVENT)
   async handleSessionStateChanged(payload: SessionStateChangedPayload) {
     const state = await this.sessionsService.getState(payload.sessionId);
     this.server.to(payload.sessionId).emit('session:state', state);
-
-    if (state.status === 'in_progress') {
-      await this.emitAllQuestions(
-        this.server.to(payload.sessionId),
-        payload.sessionId,
-      );
-    }
 
     if (state.status === 'ended') {
       this.server.to(payload.sessionId).emit('quiz:ended', {});
@@ -86,21 +73,6 @@ export class QuizGateway {
   @OnEvent(ANSWER_CREATED_EVENT)
   handleAnswerCreated(payload: AnswerCreatedPayload) {
     this.scheduleLeaderboardBroadcast(payload.sessionId);
-  }
-
-  private async emitAllQuestions(
-    target: { emit: (event: string, payload: unknown) => unknown },
-    sessionId: string,
-  ) {
-    const session = await this.sessionsService.findById(sessionId);
-    const questions = await this.sessionsService.getAllQuestionDocs(session);
-    if (questions.length === 0) return;
-
-    target.emit('questions:all', {
-      questions: questions.map((q) => this.questionsService.sanitize(q)),
-      totalQuestions: questions.length,
-      serverTimestamp: Date.now(),
-    });
   }
 
   private scheduleLeaderboardBroadcast(sessionId: string) {

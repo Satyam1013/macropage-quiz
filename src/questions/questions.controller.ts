@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Controller,
+  ForbiddenException,
   Get,
   HttpCode,
   HttpStatus,
@@ -9,6 +10,9 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { SessionTokenGuard } from '../participants/guards/session-token.guard';
+import { CurrentParticipant } from '../participants/decorators/current-participant.decorator';
+import type { ParticipantDocument } from '../participants/schemas/participant.schema';
 import { SessionsService } from '../sessions/sessions.service';
 import { QuestionsService } from './questions.service';
 
@@ -18,6 +22,21 @@ export class QuestionsController {
     private readonly sessionsService: SessionsService,
     private readonly questionsService: QuestionsService,
   ) {}
+
+  @UseGuards(JwtAuthGuard)
+  @Post('mindset/seed')
+  @HttpCode(HttpStatus.OK)
+  async seedMindsetBank() {
+    const questions = await this.questionsService.seedMindsetBank();
+    return questions.map((q) => this.questionsService.sanitize(q));
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('mindset/bank')
+  async getMindsetBank() {
+    const questions = await this.questionsService.getMindsetBank();
+    return questions.map((q) => this.questionsService.sanitize(q));
+  }
 
   @UseGuards(JwtAuthGuard)
   @Post('trivia/seed')
@@ -38,13 +57,32 @@ export class QuestionsController {
     }));
   }
 
+  // Personalized: 5 randomly-assigned mindset questions (one per dimension,
+  // fixed once assigned) + this session's shared trivia questions, if any.
+  @UseGuards(SessionTokenGuard)
   @Get(':sessionId')
-  async getAll(@Param('sessionId') sessionId: string) {
+  async getAll(
+    @Param('sessionId') sessionId: string,
+    @CurrentParticipant() participant: ParticipantDocument,
+  ) {
+    if (participant.sessionId.toString() !== sessionId) {
+      throw new ForbiddenException('Session token does not match this session');
+    }
+
     const session = await this.sessionsService.findById(sessionId);
     if (session.status === 'draft') {
       throw new BadRequestException('Quiz has not started yet');
     }
-    const questions = await this.sessionsService.getAllQuestionDocs(session);
-    return questions.map((q) => this.questionsService.sanitize(q));
+
+    const mindsetIds =
+      await this.questionsService.getOrAssignParticipantMindsetIds(participant);
+    const orderedIds = [...mindsetIds, ...session.questionIds];
+    const questions = await this.questionsService.findByIds(orderedIds);
+    const byId = new Map(questions.map((q) => [q._id.toString(), q]));
+
+    return orderedIds
+      .map((id) => byId.get(id.toString()))
+      .filter((q) => !!q)
+      .map((q) => this.questionsService.sanitize(q));
   }
 }

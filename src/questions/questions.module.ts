@@ -4,6 +4,7 @@ import { Question, QuestionSchema } from './schemas/question.schema';
 import { QuestionsService } from './questions.service';
 import { QuestionsController } from './questions.controller';
 import { SessionsModule } from '../sessions/sessions.module';
+import { ParticipantsModule } from '../participants/participants.module';
 
 @Module({
   imports: [
@@ -11,6 +12,7 @@ import { SessionsModule } from '../sessions/sessions.module';
       { name: Question.name, schema: QuestionSchema },
     ]),
     SessionsModule,
+    ParticipantsModule,
   ],
   controllers: [QuestionsController],
   providers: [QuestionsService],
