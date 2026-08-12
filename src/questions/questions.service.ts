@@ -3,13 +3,15 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Question, QuestionDocument } from './schemas/question.schema';
 import { DEFAULT_QUESTIONS } from './seed-questions';
+import { TRIVIA_QUESTIONS } from './seed-trivia-questions';
 
 export interface SanitizedQuestion {
   id: string;
   text: string;
   order: number;
   timeLimitSeconds: number;
-  dimension: string;
+  type: string;
+  dimension?: string;
   options: { key: string; text: string }[];
 }
 
@@ -23,6 +25,23 @@ export class QuestionsService {
   async seedDefaultQuestions(): Promise<Types.ObjectId[]> {
     const created = await this.questionModel.insertMany(DEFAULT_QUESTIONS);
     return created.map((doc) => doc._id);
+  }
+
+  /**
+   * Seeds the 50-question trivia bank once. Idempotent: if any trivia
+   * questions already exist, returns them as-is instead of inserting again.
+   */
+  async seedTriviaBank(): Promise<QuestionDocument[]> {
+    const existing = await this.questionModel.find({ type: 'trivia' }).exec();
+    if (existing.length > 0) return existing;
+    return this.questionModel.insertMany(TRIVIA_QUESTIONS);
+  }
+
+  async getTriviaBank(): Promise<QuestionDocument[]> {
+    return this.questionModel
+      .find({ type: 'trivia' })
+      .sort({ order: 1 })
+      .exec();
   }
 
   async findById(id: string | Types.ObjectId): Promise<QuestionDocument> {
@@ -41,6 +60,7 @@ export class QuestionsService {
       text: question.text,
       order: question.order,
       timeLimitSeconds: question.timeLimitSeconds,
+      type: question.type,
       dimension: question.dimension,
       options: question.options.map((o) => ({ key: o.key, text: o.text })),
     };

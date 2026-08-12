@@ -1,10 +1,15 @@
-import { QuestionDimension, OptionKey } from './schemas/question.schema';
+import {
+  QuestionDimension,
+  QuestionType,
+  OptionKey,
+} from './schemas/question.schema';
 
 export interface SeedQuestion {
   text: string;
   order: number;
   timeLimitSeconds: number;
-  dimension: QuestionDimension;
+  type: QuestionType;
+  dimension?: QuestionDimension;
   options: { key: OptionKey; text: string; points: number }[];
 }
 
@@ -13,6 +18,7 @@ export const DEFAULT_QUESTIONS: SeedQuestion[] = [
     text: 'How do you currently track your daily sales and customer udhaar (credit)?',
     order: 1,
     timeLimitSeconds: 20,
+    type: 'mindset',
     dimension: 'digital_readiness',
     options: [
       { key: 'A', text: 'Paper register / memory', points: 0 },
@@ -25,6 +31,7 @@ export const DEFAULT_QUESTIONS: SeedQuestion[] = [
     text: 'Your best month ever just happened. What is your very next move?',
     order: 2,
     timeLimitSeconds: 20,
+    type: 'mindset',
     dimension: 'growth_mindset',
     options: [
       { key: 'A', text: 'Enjoy it, I earned it', points: 0 },
@@ -37,6 +44,7 @@ export const DEFAULT_QUESTIONS: SeedQuestion[] = [
     text: 'A regular customer has not visited in 2 months. What do you do first?',
     order: 3,
     timeLimitSeconds: 20,
+    type: 'mindset',
     dimension: 'customer_relationship',
     options: [
       {
@@ -53,6 +61,7 @@ export const DEFAULT_QUESTIONS: SeedQuestion[] = [
     text: 'A competitor opens two streets away with lower prices. Your reaction?',
     order: 4,
     timeLimitSeconds: 20,
+    type: 'mindset',
     dimension: 'strategic_thinking',
     options: [
       { key: 'A', text: 'Match their price immediately', points: 1 },
@@ -69,6 +78,7 @@ export const DEFAULT_QUESTIONS: SeedQuestion[] = [
     text: 'You have ₹20,000 of unplanned extra profit this month. Where does it go?',
     order: 5,
     timeLimitSeconds: 20,
+    type: 'mindset',
     dimension: 'investment_discipline',
     options: [
       { key: 'A', text: 'Save it', points: 1 },

@@ -3,11 +3,14 @@
 Build a mobile-first web frontend for a **live, in-person business quiz** run at a
 MACROPAGE stage event. ~100–110 small-business owners scan a QR code on their phones,
 register, create their profile, and wait. When the admin starts the quiz, everyone gets
-all 5 mindset questions at once and races through them self-paced (the whole quiz
-typically wraps in under a minute). Once the admin ends the quiz, every participant is
-dropped straight onto a results screen with their rank and an AI-generated "Analyze My
-Business" report. There is also a big-screen "display" view for the projector, and an
-admin console the event host runs from a laptop with exactly two controls: start and end.
+every question in the session at once — a mix of the 5 mindset questions and however
+many trivia questions the admin picked for that event — and races through them
+self-paced (the whole quiz typically wraps in under a minute). Once the admin ends the
+quiz, every participant is dropped straight onto a results screen with their rank and an
+AI-generated "Analyze My Business" report (based only on the mindset answers — trivia
+doesn't affect it, just the leaderboard score). There is also a big-screen "display" view
+for the projector, and an admin console the event host runs from a laptop with exactly
+two quiz-flow controls: start and end (plus a one-time trivia-bank setup step).
 
 The backend is already built (NestJS + MongoDB + Socket.IO). Do not invent endpoints —
 use exactly what's documented below. There is no "next question" admin control and no
@@ -32,13 +35,16 @@ Socket.IO URL should be read from environment variables (e.g. `VITE_API_URL`,
    tight, quiz starts soon" message. This is where participants sit after finishing
    onboarding.
 4. **Quiz screen** — shown on the `questions:all` socket event (fires once, when the
-   admin starts the quiz, containing all 5 questions). Render questions one at a time
-   (or as a swipeable stack) client-side — pacing is entirely up to the participant, the
-   server does not push questions individually. For each question, submit the answer via
-   `POST /api/answers` as soon as the participant picks an option, then move to the next
-   unanswered question immediately (no server round-trip needed to "unlock" it — they're
-   all already available). Once all 5 are answered, show a "you're done — waiting for
-   others to finish" screen. Handle reload mid-quiz: call
+   admin starts the quiz, containing every question configured for that session). Each
+   question has a `type: "mindset" | "trivia"` — you can style them differently (e.g. a
+   small "Trivia" badge) but the answer flow is identical for both; don't treat them as
+   separate screens. Render questions one at a time (or as a swipeable stack)
+   client-side — pacing is entirely up to the participant, the server does not push
+   questions individually. For each question, submit the answer via `POST /api/answers`
+   as soon as the participant picks an option, then move to the next unanswered question
+   immediately (no server round-trip needed to "unlock" it — they're all already
+   available). Once every question is answered, show a "you're done — waiting for others
+   to finish" screen. Handle reload mid-quiz: call
    `GET /api/sessions/:id/state?participantId=` and use `answeredQuestionIds` to skip
    already-answered questions and resume at the first unanswered one. `timeLimitSeconds`
    on each question is a per-question display hint (e.g. a small elapsed/suggested-pace
@@ -72,17 +78,24 @@ Connects to the socket with `role: "display"`. Shows:
    browsable — clicking an old (`ended`) session opens its leaderboard/participants/CSV
    export read-only; clicking a `draft` one resumes the control panel below. A "Create
    New Session" action calls `POST /api/sessions`.
-3. **Session control panel** — create a session (`POST /api/sessions`, title +
-   auto-seed toggle). Exactly two action buttons after that: **Start Quiz**
+3. **Session creation** (part of the control panel above, or its own step before it) —
+   title, a mindset auto-seed toggle, and a trivia picker. The trivia picker needs
+   `GET /api/questions/trivia/bank` (list, includes `correctKey` so the admin can review
+   answers before picking) — if it 404s/empty, show a "Seed trivia bank" button that
+   calls `POST /api/questions/trivia/seed` once (idempotent, safe to call again). Let the
+   admin either hand-pick questions in order (sends `triviaQuestionIds: string[]` on
+   `POST /api/sessions`) or just request a random count (sends `triviaCount: number`,
+   1–50) — don't send both. Submitting creates the session (`POST /api/sessions`).
+4. **Session control panel** — exactly two action buttons: **Start Quiz**
    (`POST /api/sessions/:id/start`) and **End Quiz** (`POST /api/sessions/:id/end`). Do
    not build a "next question" control — there isn't one. Disable Start once already
    started, disable End until started; the API also enforces this server-side and
    returns 400 on an invalid transition — surface that error.
-4. **Live dashboard** — participant count, total answered so far, a live ranked table
+5. **Live dashboard** — participant count, total answered so far, a live ranked table
    (`GET /api/sessions/:id/leaderboard`, or listen to `leaderboard:update` on the socket
    joined with `role: "admin"`). This is how the admin judges when to hit End (e.g. once
    most participants have finished, or ~1 minute has passed).
-5. **Participants & export** — table from `GET /api/sessions/:id/participants`, and a
+6. **Participants & export** — table from `GET /api/sessions/:id/participants`, and a
    "Download CSV" button linking to `GET /api/sessions/:id/export.csv` (send the Bearer
    token; if using a plain `<a href>` you'll need to fetch it with auth headers and
    trigger a blob download instead of a direct link, since the browser won't attach the
@@ -98,7 +111,9 @@ Connects to the socket with `role: "display"`. Shows:
 |---|---|---|---|---|
 | GET | `/health` | none | — | `{ status: "ok" }` |
 | POST | `/api/auth/admin/login` | none | `{ email, password }` | `{ accessToken }` |
-| POST | `/api/sessions` | admin | `{ title, autoSeedQuestions? }` | QuizSession (`status: "draft"`) |
+| POST | `/api/questions/trivia/seed` | admin | — | `SanitizedQuestion[]` — idempotent, inserts the 50 trivia questions only if none exist yet |
+| GET | `/api/questions/trivia/bank` | admin | — | `(SanitizedQuestion & { correctKey })[]` — full trivia bank for the picker UI |
+| POST | `/api/sessions` | admin | `{ title, autoSeedQuestions?, triviaQuestionIds?: string[], triviaCount?: number }` | QuizSession (`status: "draft"`) — send at most one of `triviaQuestionIds` (ordered pick, takes priority) / `triviaCount` (random sample, 1–50) |
 | GET | `/api/sessions` | admin | — | `QuizSession[]`, newest first — full history, not just the active one |
 | POST | `/api/sessions/:id/start` | admin | — | QuizSession (`draft` → `in_progress`) |
 | POST | `/api/sessions/:id/end` | admin | — | QuizSession (`in_progress` → `ended`) |
@@ -106,7 +121,7 @@ Connects to the socket with `role: "display"`. Shows:
 | GET | `/api/sessions/:id/participants` | admin | — | `Participant[]` |
 | GET | `/api/sessions/:id/export.csv` | admin | — | CSV file |
 | GET | `/api/sessions/:id/state?participantId=` | none | — | `{ sessionId, title, status, totalQuestions, answeredQuestionIds: string[]\|null }` |
-| GET | `/api/questions/:sessionId` | none | — | `SanitizedQuestion[]` (all 5 at once); 400 if session is still `draft` |
+| GET | `/api/questions/:sessionId` | none | — | `SanitizedQuestion[]` (every question in the session, mindset + trivia, at once); 400 if session is still `draft` |
 | POST | `/api/participants/register` | none (rate-limited) | `{ sessionId, name, whatsappNumber }` | `{ participantId, sessionToken }`; 400 only if session already `ended` |
 | PATCH | `/api/participants/:id/onboarding` | sessionToken | `{ businessName?, businessCategory?, goal, goalOther? }` | Participant |
 | GET | `/api/participants/:id/rank` | none | — | `{ rank: number\|null, score }` |
@@ -114,8 +129,10 @@ Connects to the socket with `role: "display"`. Shows:
 | POST | `/api/participants/:id/analysis` | sessionToken | — | AnalysisReport (generates or returns cached) |
 | GET | `/api/participants/:id/analysis` | none | — | AnalysisReport or 404 |
 
-`SanitizedQuestion`: `{ id, text, order, timeLimitSeconds, dimension, options: [{key, text}] }`
-(no points/correct-answer info exposed).
+`SanitizedQuestion`: `{ id, text, order, timeLimitSeconds, type: "mindset"|"trivia", dimension?, options: [{key, text}] }`
+(`dimension` is only present on mindset questions; no points/correct-answer info is
+exposed on the participant-facing routes — the trivia bank listing is the only place
+`correctKey` appears, and that's admin-only).
 
 `goal` enum: `grow_customers` \| `grow_revenue` \| `other` (send `goalOther` when
 `other`). `selectedKey` enum: `A` \| `B` \| `C` \| `D`. `status` enum on QuizSession:
@@ -153,7 +170,7 @@ Connect with `io(SOCKET_URL + '/quiz')`, then immediately emit `join`.
 
 **Listen (server → client):**
 - `session:state` — `{ sessionId, title, status, totalQuestions, answeredQuestionIds }` — sent on join and every admin transition; drives which screen to show.
-- `questions:all` — `{ questions: SanitizedQuestion[], totalQuestions, serverTimestamp }` — sent once when the quiz starts (and to anyone joining mid-quiz or after it ends, so late joiners/refreshes still get the full set).
+- `questions:all` — `{ questions: SanitizedQuestion[], totalQuestions, serverTimestamp }` — sent once when the quiz starts (and to anyone joining mid-quiz or after it ends, so late joiners/refreshes still get the full set). `questions` is whatever mix of mindset/trivia the admin configured for this session, in the order they picked.
 - `leaderboard:update` — `{ top: [{participantId, name, businessName?, score, rank}], totalAnswered }` — debounced ~1s, top 10 only.
 - `quiz:ended` — `{}` — move participants/display straight to the results screen.
 

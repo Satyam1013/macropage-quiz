@@ -8,6 +8,8 @@ export type QuestionDimension =
   | 'investment_discipline'
   | 'digital_readiness';
 
+export type QuestionType = 'mindset' | 'trivia';
+
 export type OptionKey = 'A' | 'B' | 'C' | 'D';
 
 export type QuestionDocument = Question & Document;
@@ -38,8 +40,10 @@ export class Question {
   @Prop({ required: true, default: 20 })
   timeLimitSeconds: number;
 
+  @Prop({ required: true, enum: ['mindset', 'trivia'], default: 'mindset' })
+  type: QuestionType;
+
   @Prop({
-    required: true,
     enum: [
       'growth_mindset',
       'customer_relationship',
@@ -48,7 +52,7 @@ export class Question {
       'digital_readiness',
     ],
   })
-  dimension: QuestionDimension;
+  dimension?: QuestionDimension;
 
   @Prop({ type: [QuestionOptionSchema], required: true })
   options: QuestionOption[];

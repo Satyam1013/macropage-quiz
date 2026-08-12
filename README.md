@@ -1,10 +1,10 @@
 # MACROPAGE Quiz Backend
 
 Backend for a live, in-person business quiz used at a MACROPAGE stage event.
-~100–110 small-business owners scan a QR code, register, answer 5
-mindset-based questions on their phones, watch a live leaderboard on a
-projector, and finish with an AI-generated "Analyze My Business" report. An
-admin controls the quiz flow from a laptop.
+~100–110 small-business owners scan a QR code, register, answer a mix of
+5 mindset-based questions and optional trivia questions on their phones,
+watch a live leaderboard on a projector, and finish with an AI-generated
+"Analyze My Business" report. An admin controls the quiz flow from a laptop.
 
 ## Tech stack
 
@@ -50,20 +50,27 @@ See `.env.example`:
 ## Running a live event
 
 1. Admin logs in: `POST /api/auth/admin/login`.
-2. Admin creates a session: `POST /api/sessions` (auto-seeds the 5 default
-   questions unless `autoSeedQuestions: false` is passed). Registration is
+2. (One-time, or whenever the bank needs refreshing) Admin seeds the trivia
+   bank: `POST /api/questions/trivia/seed` — idempotent, inserts the 50
+   trivia questions only if none exist yet. Browse them with
+   `GET /api/questions/trivia/bank`.
+3. Admin creates a session: `POST /api/sessions` (auto-seeds the 5 default
+   mindset questions unless `autoSeedQuestions: false` is passed, and
+   optionally appends trivia via `triviaQuestionIds` — a hand-picked, ordered
+   list — or `triviaCount` — a random sample from the bank). Registration is
    open immediately — no separate "open registration" step. Participants
    scan the QR code (`https://quiz.macropage.in/join?session=<id>`), hit
    `POST /api/participants/register`, complete onboarding, and wait.
-3. Admin starts the quiz: `POST /api/sessions/:id/start` — broadcasts all 5
-   questions to everyone connected at once; participants answer them
-   self-paced (`POST /api/answers` per question) and then wait.
-4. Admin ends the quiz whenever they choose (typically within ~1 minute):
+4. Admin starts the quiz: `POST /api/sessions/:id/start` — broadcasts every
+   question in the session (mindset + trivia, in the order configured) to
+   everyone connected at once; participants answer them self-paced
+   (`POST /api/answers` per question) and then wait.
+5. Admin ends the quiz whenever they choose (typically within ~1 minute):
    `POST /api/sessions/:id/end` — freezes the leaderboard and moves
    participants straight to their results screen (rank + leaderboard).
-5. Participants tap "Analyze My Business" on the results screen:
+6. Participants tap "Analyze My Business" on the results screen:
    `POST /api/participants/:id/analysis`.
-6. Admin exports the lead list: `GET /api/sessions/:id/export.csv`.
+7. Admin exports the lead list: `GET /api/sessions/:id/export.csv`.
 
 ## REST API
 
@@ -76,7 +83,7 @@ All routes are prefixed with `/api` (except `/health`).
 | POST | `/participants/register` | — | `{ sessionId, name, whatsappNumber }` → `{ participantId, sessionToken }`; blocked only once the session has `ended` |
 | PATCH | `/participants/:id/onboarding` | sessionToken | `{ businessName?, businessCategory?, goal, goalOther? }` |
 | GET | `/sessions/:id/state` | — | `?participantId=` optional; `{ status, totalQuestions, answeredQuestionIds }` |
-| GET | `/questions/:sessionId` | — | All 5 questions at once, sanitized (no points); 400 until the quiz has started |
+| GET | `/questions/:sessionId` | — | All of the session's questions at once (mindset + trivia), sanitized (no points); 400 until the quiz has started |
 | POST | `/answers` | sessionToken | `{ questionId, selectedKey, timeTakenMs }` — any question belonging to the session, in any order, while `in_progress` |
 | GET | `/participants/:id/rank` | — | Current rank + score |
 | POST | `/participants/:id/analysis` | sessionToken | Generates (or returns cached) AI report |
@@ -87,7 +94,9 @@ All routes are prefixed with `/api` (except `/health`).
 | Method | Path | Description |
 |---|---|---|
 | POST | `/auth/admin/login` | `{ email, password }` → `{ accessToken }` |
-| POST | `/sessions` | Create a session (`draft`); auto-seeds the 5 default questions; registration is open immediately |
+| POST | `/questions/trivia/seed` | Idempotent: inserts the 50 trivia questions if none exist yet |
+| GET | `/questions/trivia/bank` | List the full trivia bank, incl. `correctKey`, for picking questions |
+| POST | `/sessions` | Create a session (`draft`); auto-seeds the 5 default mindset questions; optionally append trivia via `triviaQuestionIds` (ordered pick) or `triviaCount` (random sample); registration is open immediately |
 | GET | `/sessions` | List all sessions (past + current), newest first — for browsing quiz history |
 | POST | `/sessions/:id/start` | draft → in_progress; broadcasts all questions at once |
 | POST | `/sessions/:id/end` | in_progress → ended, freezes leaderboard |
@@ -133,9 +142,15 @@ simple and avoids double-submits.
   deleted — every `Participant`, `Answer`, and `AnalysisReport` carries its
   `sessionId`, so past events stay fully queryable via `GET /sessions` (list)
   and the existing per-session leaderboard/participants/export routes.
-- **Question** — text, dimension (one of `growth_mindset`,
+- **Question** — `type: 'mindset' | 'trivia'`, text, 4 options. Mindset
+  questions carry a `dimension` (one of `growth_mindset`,
   `customer_relationship`, `strategic_thinking`, `investment_discipline`,
-  `digital_readiness`), 4 options each worth 0–3 points.
+  `digital_readiness`) with options worth 0–3 points each, feeding the
+  archetype/`techScore` analysis. Trivia questions have no dimension — one
+  option worth full points (correct), the rest worth 0 — and count toward
+  the leaderboard score only, not the AI analysis. The 50-question trivia
+  bank is seeded once (`POST /questions/trivia/seed`) and reused across
+  sessions; a session picks a subset of it at creation time.
 - **Participant** — registers into a session with just a name + WhatsApp
   number; gets a `sessionToken` used as a bearer token for every
   authenticated follow-up call.
@@ -147,8 +162,9 @@ simple and avoids double-submits.
 
 ## Scoring & the AI report
 
-1. Each dimension's score is the earned points on its one question,
-   normalized to 0–100.
+1. Each dimension's score is the earned points on its one mindset question,
+   normalized to 0–100. Trivia answers are excluded from this calculation
+   entirely (they still count toward leaderboard score).
 2. `techScore` is a weighted average across all five dimensions, weighted
    toward `digital_readiness`.
 3. The archetype is picked from whichever dimension scored highest.

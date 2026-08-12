@@ -61,6 +61,29 @@ export class SessionsService {
       questionIds = created.map((doc) => doc._id);
     }
 
+    if (dto.triviaQuestionIds?.length) {
+      const trivia = await this.questionModel
+        .find({ _id: { $in: dto.triviaQuestionIds }, type: 'trivia' })
+        .exec();
+      const byId = new Map(trivia.map((q) => [q._id.toString(), q]));
+      const missing = dto.triviaQuestionIds.filter((id) => !byId.has(id));
+      if (missing.length > 0) {
+        throw new BadRequestException(
+          `Unknown trivia question id(s): ${missing.join(', ')}`,
+        );
+      }
+      // Preserve the order the admin picked them in.
+      questionIds.push(...dto.triviaQuestionIds.map((id) => byId.get(id)!._id));
+    } else if (dto.triviaCount) {
+      const sampled = await this.questionModel.aggregate<{
+        _id: Types.ObjectId;
+      }>([
+        { $match: { type: 'trivia' } },
+        { $sample: { size: dto.triviaCount } },
+      ]);
+      questionIds.push(...sampled.map((doc) => doc._id));
+    }
+
     return this.sessionModel.create({
       title: dto.title,
       status: 'draft',
@@ -108,10 +131,18 @@ export class SessionsService {
   async getAllQuestionDocs(
     session: QuizSessionDocument,
   ): Promise<QuestionDocument[]> {
-    return this.questionModel
+    const questions = await this.questionModel
       .find({ _id: { $in: session.questionIds } })
-      .sort({ order: 1 })
       .exec();
+    const byId = new Map(questions.map((q) => [q._id.toString(), q]));
+    // Preserve the order questions were added to the session (mindset first,
+    // then trivia) rather than each question's own bank-relative `order`.
+    const ordered: QuestionDocument[] = [];
+    for (const id of session.questionIds) {
+      const question = byId.get(id.toString());
+      if (question) ordered.push(question);
+    }
+    return ordered;
   }
 
   async getState(sessionId: string, participantId?: string) {

@@ -57,7 +57,9 @@ export class AnalysisService {
     const pointsByDimension = new Map<QuestionDimension, number>();
     for (const answer of answers) {
       const question = questionById.get(answer.questionId.toString());
-      if (!question) continue;
+      if (!question || question.type !== 'mindset' || !question.dimension) {
+        continue;
+      }
       pointsByDimension.set(question.dimension, answer.pointsAwarded);
     }
 
