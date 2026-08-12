@@ -95,9 +95,22 @@ export class SessionsService {
     });
   }
 
-  async start(id: string): Promise<QuizSessionDocument> {
+  async openRegistration(id: string): Promise<QuizSessionDocument> {
     const session = await this.findById(id);
     if (session.status !== 'draft') {
+      throw new BadRequestException(
+        `Cannot open registration from status "${session.status}"`,
+      );
+    }
+    session.status = 'registration_open';
+    await session.save();
+    this.emitStateChanged(id);
+    return session;
+  }
+
+  async start(id: string): Promise<QuizSessionDocument> {
+    const session = await this.findById(id);
+    if (session.status !== 'registration_open') {
       throw new BadRequestException(
         `Cannot start quiz from status "${session.status}"`,
       );
@@ -141,7 +154,10 @@ export class SessionsService {
     const session = await this.findById(sessionId);
     let answeredQuestionIds: string[] | null = null;
 
-    if (participantId && session.status !== 'draft') {
+    if (
+      participantId &&
+      (session.status === 'in_progress' || session.status === 'ended')
+    ) {
       const answers = await this.answerModel
         .find({ participantId, sessionId: session._id })
         .select('questionId')

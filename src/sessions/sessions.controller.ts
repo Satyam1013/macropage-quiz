@@ -32,6 +32,13 @@ export class SessionsController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Post(':id/open-registration')
+  @HttpCode(HttpStatus.OK)
+  openRegistration(@Param('id') id: string) {
+    return this.sessionsService.openRegistration(id);
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Post(':id/start')
   @HttpCode(HttpStatus.OK)
   start(@Param('id') id: string) {

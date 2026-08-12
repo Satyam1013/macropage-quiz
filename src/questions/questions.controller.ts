@@ -70,7 +70,7 @@ export class QuestionsController {
     }
 
     const session = await this.sessionsService.findById(sessionId);
-    if (session.status === 'draft') {
+    if (session.status !== 'in_progress' && session.status !== 'ended') {
       throw new BadRequestException('Quiz has not started yet');
     }
 

@@ -23,8 +23,10 @@ export class ParticipantsService {
 
   async register(dto: RegisterParticipantDto) {
     const session = await this.sessionsService.findById(dto.sessionId);
-    if (session.status === 'ended') {
-      throw new BadRequestException('This quiz session has already ended');
+    if (session.status !== 'registration_open') {
+      throw new BadRequestException(
+        'Registration is not currently open for this session',
+      );
     }
 
     const sessionToken = randomBytes(24).toString('hex');

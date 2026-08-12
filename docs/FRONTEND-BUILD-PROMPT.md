@@ -11,13 +11,13 @@ typically wraps in under a minute). Once the admin ends the quiz, every particip
 dropped straight onto a results screen with their rank and an AI-generated "Analyze My
 Business" report (based only on their 5 mindset answers — trivia doesn't affect it, just
 the leaderboard score). There is also a big-screen "display" view for the projector, and
-an admin console the event host runs from a laptop with exactly two quiz-flow controls:
-start and end (plus one-time question-bank setup steps).
+an admin console the event host runs from a laptop with three quiz-flow controls: open
+registration, start, and end (plus one-time question-bank setup steps).
 
 The backend is already built (NestJS + MongoDB + Socket.IO). Do not invent endpoints —
-use exactly what's documented below. There is no "next question" admin control and no
-separate "open registration" step — do not build UI for either. Critically: **there is no
-socket event carrying question content** — because each participant's set is
+use exactly what's documented below. There is no "next question" admin control — do not
+build UI for it. Critically: **there is no socket event carrying question content** —
+because each participant's set is
 personalized, questions are always fetched per-participant over an authenticated REST
 call, not broadcast. Base API URL and Socket.IO URL should be read from environment
 variables (e.g. `VITE_API_URL`, `VITE_SOCKET_URL`).
@@ -26,17 +26,20 @@ variables (e.g. `VITE_API_URL`, `VITE_SOCKET_URL`).
 
 ### 1. Participant flow (phone, portrait)
 1. **Join / Register** — landing page opened via QR code URL containing `?session=<id>`.
-   No "registration open" gate to check — the URL works as soon as the session exists,
-   right up until it's `ended`. Form: name, WhatsApp number (10-digit Indian mobile). On
-   submit, call `POST /api/participants/register`, store `participantId` and
-   `sessionToken` in localStorage.
+   Registration is only accepted once the admin has opened it
+   (`session:state.status === "registration_open"`) — if the participant lands before
+   that (`status: "draft"`) or after the quiz has moved on, show a waiting/closed message
+   instead of the form. Form: name, WhatsApp number (10-digit Indian mobile). On submit,
+   call `POST /api/participants/register` (fails with 400 if registration isn't open),
+   store `participantId` and `sessionToken` in localStorage.
 2. **Onboarding** — business name, business category (dropdown: Retail / Kirana, Food &
    Hospitality, Manufacturing, Services, Healthcare, Finance, Logistics & Transport,
    Education, Other — free text allowed too), and goal (grow customers / grow revenue /
    other, with a text field if "other"). Submit via
    `PATCH /api/participants/:id/onboarding` with the sessionToken as bearer auth.
-3. **Waiting room** — shown while `session:state.status` is `draft`. Friendly "hang
-   tight, quiz starts soon" message. This is where participants sit after finishing
+3. **Waiting room** — shown while `session:state.status` is `draft` (before registration
+   opens) or `registration_open` (after registering, before the quiz starts). Friendly
+   "hang tight, quiz starts soon" message. This is where participants sit after finishing
    onboarding.
 4. **Quiz screen** — shown once `session:state.status` becomes `in_progress` (via the
    socket). On entering this screen, call `GET /api/questions/:sessionId` (bearer
@@ -70,7 +73,8 @@ variables (e.g. `VITE_API_URL`, `VITE_SOCKET_URL`).
 
 ### 2. Display screen (projector, landscape, no interaction)
 Connects to the socket with `role: "display"`. Shows:
-- Waiting/registration count screen before start (`status: "draft"`)
+- Waiting screen before registration opens (`status: "draft"`), then a registration/QR
+  screen with a live participant count while `status: "registration_open"`
 - A "quiz is live!" screen once status becomes `in_progress` (there's no shared
   question-by-question progress to show since pacing and content are per-participant — a
   live answered-count via `leaderboard:update.totalAnswered` is a good substitute for
@@ -97,17 +101,22 @@ Connects to the socket with `role: "display"`. Shows:
 4. **Session creation** — title + a trivia picker. Let the admin either hand-pick trivia
    questions in order (sends `triviaQuestionIds: string[]` on `POST /api/sessions`) or
    just request a random count (sends `triviaCount: number`, 1–50) — don't send both, and
-   it's fine to send neither (pure mindset-only quiz). Submitting creates the session.
-5. **Session control panel** — exactly two action buttons: **Start Quiz**
-   (`POST /api/sessions/:id/start`) and **End Quiz** (`POST /api/sessions/:id/end`). Do
-   not build a "next question" control — there isn't one. Disable Start once already
-   started, disable End until started; the API also enforces this server-side and
-   returns 400 on an invalid transition (e.g. if the mindset bank was never seeded) —
-   surface that error.
+   it's fine to send neither (pure mindset-only quiz). Submitting creates the session
+   (`status: "draft"`).
+5. **Session control panel** — three action buttons in strict sequence: **Open
+   Registration** (`POST /api/sessions/:id/open-registration`, `draft` →
+   `registration_open`), **Start Quiz** (`POST /api/sessions/:id/start`,
+   `registration_open` → `in_progress`), and **End Quiz**
+   (`POST /api/sessions/:id/end`, `in_progress` → `ended`). Do not build a "next
+   question" control — there isn't one. Only enable whichever button is valid for the
+   session's current `status`; the API also enforces this server-side and returns 400 on
+   an invalid transition (e.g. starting before registration was opened, or if the
+   mindset bank was never seeded) — surface that error.
 6. **Live dashboard** — participant count, total answered so far, a live ranked table
    (`GET /api/sessions/:id/leaderboard`, or listen to `leaderboard:update` on the socket
-   joined with `role: "admin"`). This is how the admin judges when to hit End (e.g. once
-   most participants have finished, or ~1 minute has passed).
+   joined with `role: "admin"`). This is how the admin judges when to hit Start (enough
+   people registered) and End (e.g. once most participants have finished, or ~1 minute
+   has passed since start).
 7. **Participants & export** — table from `GET /api/sessions/:id/participants`, and a
    "Download CSV" button linking to `GET /api/sessions/:id/export.csv` (send the Bearer
    token; if using a plain `<a href>` you'll need to fetch it with auth headers and
@@ -130,14 +139,15 @@ Connects to the socket with `role: "display"`. Shows:
 | GET | `/api/questions/trivia/bank` | admin | — | `(SanitizedQuestion & { correctKey })[]` — full trivia bank for the picker UI |
 | POST | `/api/sessions` | admin | `{ title, triviaQuestionIds?: string[], triviaCount?: number }` | QuizSession (`status: "draft"`) — send at most one of `triviaQuestionIds` (ordered pick, takes priority) / `triviaCount` (random sample, 1–50); mindset is never configured here |
 | GET | `/api/sessions` | admin | — | `QuizSession[]`, newest first — full history, not just the active one |
-| POST | `/api/sessions/:id/start` | admin | — | QuizSession (`draft` → `in_progress`); 400 if the mindset bank hasn't been seeded yet |
+| POST | `/api/sessions/:id/open-registration` | admin | — | QuizSession (`draft` → `registration_open`) |
+| POST | `/api/sessions/:id/start` | admin | — | QuizSession (`registration_open` → `in_progress`); 400 if the mindset bank hasn't been seeded yet |
 | POST | `/api/sessions/:id/end` | admin | — | QuizSession (`in_progress` → `ended`) |
 | GET | `/api/sessions/:id/leaderboard` | admin | — | `LeaderboardEntry[]` (full ranked list) |
 | GET | `/api/sessions/:id/participants` | admin | — | `Participant[]` |
 | GET | `/api/sessions/:id/export.csv` | admin | — | CSV file |
 | GET | `/api/sessions/:id/state?participantId=` | none | — | `{ sessionId, title, status, totalQuestions, answeredQuestionIds: string[]\|null }` |
 | GET | `/api/questions/:sessionId` | sessionToken | — | `SanitizedQuestion[]` — **this participant's own** set: their 5 assigned mindset questions (randomized on first call, stable after) + the session's shared trivia; 400 if session is still `draft` |
-| POST | `/api/participants/register` | none (rate-limited) | `{ sessionId, name, whatsappNumber }` | `{ participantId, sessionToken }`; 400 only if session already `ended` |
+| POST | `/api/participants/register` | none (rate-limited) | `{ sessionId, name, whatsappNumber }` | `{ participantId, sessionToken }`; 400 unless session status is exactly `registration_open` |
 | PATCH | `/api/participants/:id/onboarding` | sessionToken | `{ businessName?, businessCategory?, goal, goalOther? }` | Participant |
 | GET | `/api/participants/:id/rank` | none | — | `{ rank: number\|null, score }` |
 | POST | `/api/answers` | sessionToken | `{ questionId, selectedKey, timeTakenMs }` | `{ success: true }` — must be a question from your own fetched set (mindset or trivia), any order, only while `in_progress` |
@@ -151,8 +161,9 @@ exposed on the participant-facing routes — the trivia bank listing is the only
 
 `goal` enum: `grow_customers` \| `grow_revenue` \| `other` (send `goalOther` when
 `other`). `selectedKey` enum: `A` \| `B` \| `C` \| `D`. `status` enum on QuizSession:
-`draft` \| `in_progress` \| `ended` — that's the whole state machine, only two admin
-transitions exist.
+`draft` \| `registration_open` \| `in_progress` \| `ended` — that's the whole state
+machine, in strict linear order, driven by three admin actions (open-registration,
+start, end).
 
 **AnalysisReport shape:**
 ```json
