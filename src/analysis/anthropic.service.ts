@@ -26,10 +26,15 @@ export interface ReportPromptInput {
 
 export interface GeneratedReportJson {
   headline: string;
+  headlineHi: string;
   businessSnapshot: string;
+  businessSnapshotHi: string;
   mindsetProfile: string;
+  mindsetProfileHi: string;
   goalRoadmap: string[];
+  goalRoadmapHi: string[];
   techRecommendation: string;
+  techRecommendationHi: string;
 }
 
 const REPORT_JSON_SHAPE = `{

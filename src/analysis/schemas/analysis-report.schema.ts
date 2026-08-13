@@ -28,17 +28,32 @@ export class ReportJson {
   @Prop({ required: true })
   headline: string;
 
+  @Prop()
+  headlineHi?: string;
+
   @Prop({ required: true })
   businessSnapshot: string;
+
+  @Prop()
+  businessSnapshotHi?: string;
 
   @Prop({ required: true })
   mindsetProfile: string;
 
+  @Prop()
+  mindsetProfileHi?: string;
+
   @Prop({ type: [String], required: true })
   goalRoadmap: string[];
 
+  @Prop({ type: [String] })
+  goalRoadmapHi?: string[];
+
   @Prop({ required: true })
   techRecommendation: string;
+
+  @Prop()
+  techRecommendationHi?: string;
 }
 export const ReportJsonSchema = SchemaFactory.createForClass(ReportJson);
 
