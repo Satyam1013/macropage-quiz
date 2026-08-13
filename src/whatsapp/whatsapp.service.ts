@@ -31,13 +31,18 @@ export class WhatsappService {
     }
 
     const phone = `+91${input.whatsappNumber}`;
+    // Template body already appends "/100" after {{5}} — send the bare number.
     const templateVars: Record<string, string> = {
       '1': input.name,
       '2': input.businessName || input.name,
       '3': String(input.rank),
       '4': String(input.totalParticipants),
-      '5': `${input.techScore}/100`,
+      '5': String(input.techScore),
     };
+
+    this.logger.log(
+      `Sending WhatsApp result to ${phone} (rank ${input.rank}/${input.totalParticipants}, score ${input.techScore})`,
+    );
 
     try {
       // macropage-connect exposes its public API behind Nest's global
@@ -56,11 +61,13 @@ export class WhatsappService {
         }),
       });
 
+      const body = await response.text();
       if (!response.ok) {
-        const body = await response.text();
         this.logger.warn(
           `WhatsApp send failed for ${phone}: ${response.status} ${body}`,
         );
+      } else {
+        this.logger.log(`WhatsApp send succeeded for ${phone}: ${body}`);
       }
     } catch (err) {
       this.logger.warn(

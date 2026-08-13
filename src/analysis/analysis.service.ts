@@ -140,7 +140,12 @@ export class AnalysisService {
     const entry = ranked.find(
       (e) => e.participantId === participant._id.toString(),
     );
-    if (!entry) return; // never answered anything — no rank to report
+    if (!entry) {
+      this.logger.warn(
+        `No leaderboard entry for participant ${participant._id.toString()} in session ${participant.sessionId.toString()} — skipping WhatsApp send`,
+      );
+      return;
+    }
 
     await this.whatsappService.sendQuizResult({
       whatsappNumber: participant.whatsappNumber,
