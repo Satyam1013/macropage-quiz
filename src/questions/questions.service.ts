@@ -10,11 +10,12 @@ import { DIMENSION_ORDER } from '../analysis/archetypes';
 export interface SanitizedQuestion {
   id: string;
   text: string;
+  textHi?: string;
   order: number;
   timeLimitSeconds: number;
   type: string;
   dimension?: string;
-  options: { key: string; text: string }[];
+  options: { key: string; text: string; textHi?: string }[];
 }
 
 @Injectable()
@@ -108,11 +109,16 @@ export class QuestionsService {
     return {
       id: question._id.toString(),
       text: question.text,
+      textHi: question.textHi,
       order: question.order,
       timeLimitSeconds: question.timeLimitSeconds,
       type: question.type,
       dimension: question.dimension,
-      options: question.options.map((o) => ({ key: o.key, text: o.text })),
+      options: question.options.map((o) => ({
+        key: o.key,
+        text: o.text,
+        textHi: o.textHi,
+      })),
     };
   }
 }

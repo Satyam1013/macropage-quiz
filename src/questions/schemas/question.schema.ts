@@ -22,6 +22,9 @@ export class QuestionOption {
   @Prop({ required: true, trim: true })
   text: string;
 
+  @Prop({ trim: true })
+  textHi?: string;
+
   @Prop({ required: true, min: 0, max: 3 })
   points: number;
 }
@@ -33,6 +36,9 @@ export const QuestionOptionSchema =
 export class Question {
   @Prop({ required: true, trim: true })
   text: string;
+
+  @Prop({ trim: true })
+  textHi?: string;
 
   @Prop({ required: true })
   order: number;
