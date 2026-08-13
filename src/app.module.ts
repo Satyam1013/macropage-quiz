@@ -13,6 +13,7 @@ import { AnswersModule } from './answers/answers.module';
 import { AnalysisModule } from './analysis/analysis.module';
 import { LeaderboardModule } from './leaderboard/leaderboard.module';
 import { QuizGatewayModule } from './quiz-gateway/quiz-gateway.module';
+import { WhatsappModule } from './whatsapp/whatsapp.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { QuizGatewayModule } from './quiz-gateway/quiz-gateway.module';
     AnalysisModule,
     LeaderboardModule,
     QuizGatewayModule,
+    WhatsappModule,
   ],
   controllers: [HealthController],
   providers: [

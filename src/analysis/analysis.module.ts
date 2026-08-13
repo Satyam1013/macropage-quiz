@@ -22,5 +22,6 @@ import { ParticipantsModule } from '../participants/participants.module';
   ],
   controllers: [AnalysisController],
   providers: [AnalysisService, TemplateReportService],
+  exports: [AnalysisService],
 })
 export class AnalysisModule {}
