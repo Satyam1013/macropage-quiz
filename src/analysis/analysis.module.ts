@@ -8,7 +8,7 @@ import { Answer, AnswerSchema } from '../answers/schemas/answer.schema';
 import { Question, QuestionSchema } from '../questions/schemas/question.schema';
 import { AnalysisService } from './analysis.service';
 import { AnalysisController } from './analysis.controller';
-import { AnthropicService } from './anthropic.service';
+import { TemplateReportService } from './template-report.service';
 import { ParticipantsModule } from '../participants/participants.module';
 
 @Module({
@@ -21,6 +21,6 @@ import { ParticipantsModule } from '../participants/participants.module';
     ParticipantsModule,
   ],
   controllers: [AnalysisController],
-  providers: [AnalysisService, AnthropicService],
+  providers: [AnalysisService, TemplateReportService],
 })
 export class AnalysisModule {}

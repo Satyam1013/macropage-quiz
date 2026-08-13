@@ -11,7 +11,7 @@ import {
   QuestionDocument,
 } from '../questions/schemas/question.schema';
 import { ParticipantDocument } from '../participants/schemas/participant.schema';
-import { AnthropicService } from './anthropic.service';
+import { TemplateReportService } from './template-report.service';
 import { ARCHETYPES, DIMENSION_ORDER, TECH_SCORE_WEIGHTS } from './archetypes';
 import { QuestionDimension } from '../questions/schemas/question.schema';
 
@@ -26,7 +26,7 @@ export class AnalysisService {
     private readonly answerModel: Model<AnswerDocument>,
     @InjectModel(Question.name)
     private readonly questionModel: Model<QuestionDocument>,
-    private readonly anthropicService: AnthropicService,
+    private readonly templateReportService: TemplateReportService,
   ) {}
 
   async getExisting(participantId: string): Promise<AnalysisReportDocument> {
@@ -89,7 +89,7 @@ export class AnalysisService {
     );
     const archetype = ARCHETYPES[topDimension];
 
-    const { parsed, raw } = await this.anthropicService.generateReportJson({
+    const { parsed, raw } = await this.templateReportService.generateReportJson({
       name: participant.name,
       businessName: participant.businessName,
       businessCategory: participant.businessCategory,
