@@ -89,7 +89,7 @@ export class AnalysisService {
     );
     const archetype = ARCHETYPES[topDimension];
 
-    const { parsed, raw } = await this.templateReportService.generateReportJson({
+    const { parsed, raw } = this.templateReportService.generateReportJson({
       name: participant.name,
       businessName: participant.businessName,
       businessCategory: participant.businessCategory,

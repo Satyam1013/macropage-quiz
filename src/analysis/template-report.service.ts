@@ -1,8 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import {
-  GeneratedReportJson,
-  ReportPromptInput,
-} from './anthropic.service';
+import { GeneratedReportJson, ReportPromptInput } from './anthropic.service';
 
 function pick<T>(options: T[]): T {
   return options[Math.floor(Math.random() * options.length)];
@@ -99,9 +96,10 @@ function goalText(goal: string, goalOther?: string): string {
 
 @Injectable()
 export class TemplateReportService {
-  generateReportJson(
-    input: ReportPromptInput,
-  ): { parsed: GeneratedReportJson; raw: string } {
+  generateReportJson(input: ReportPromptInput): {
+    parsed: GeneratedReportJson;
+    raw: string;
+  } {
     const businessLabel = input.businessName || 'your business';
     const categorySuffix = input.businessCategory
       ? ` (${input.businessCategory})`
@@ -130,7 +128,9 @@ export class TemplateReportService {
       input.goalOther,
     );
 
-    const techRecommendation = pick(TECH_RECOMMENDATIONS[techTier(input.techScore)]);
+    const techRecommendation = pick(
+      TECH_RECOMMENDATIONS[techTier(input.techScore)],
+    );
 
     const parsed: GeneratedReportJson = {
       headline,
