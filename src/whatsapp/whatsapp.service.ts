@@ -40,7 +40,9 @@ export class WhatsappService {
     };
 
     try {
-      const response = await fetch(`${baseUrl}/public/messages/send`, {
+      // macropage-connect exposes its public API behind Nest's global
+      // `/api/v1` prefix. `WHATSAPP_API_BASE_URL` is the host root.
+      const response = await fetch(`${baseUrl}/api/v1/public/messages/send`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
