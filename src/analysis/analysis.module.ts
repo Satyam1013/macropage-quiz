@@ -10,6 +10,8 @@ import { AnalysisService } from './analysis.service';
 import { AnalysisController } from './analysis.controller';
 import { TemplateReportService } from './template-report.service';
 import { ParticipantsModule } from '../participants/participants.module';
+import { LeaderboardModule } from '../leaderboard/leaderboard.module';
+import { WhatsappModule } from '../whatsapp/whatsapp.module';
 
 @Module({
   imports: [
@@ -19,6 +21,8 @@ import { ParticipantsModule } from '../participants/participants.module';
       { name: Question.name, schema: QuestionSchema },
     ]),
     ParticipantsModule,
+    LeaderboardModule,
+    WhatsappModule,
   ],
   controllers: [AnalysisController],
   providers: [AnalysisService, TemplateReportService],

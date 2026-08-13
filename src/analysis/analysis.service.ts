@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import {
@@ -14,11 +14,15 @@ import { ParticipantDocument } from '../participants/schemas/participant.schema'
 import { TemplateReportService } from './template-report.service';
 import { ARCHETYPES, DIMENSION_ORDER, TECH_SCORE_WEIGHTS } from './archetypes';
 import { QuestionDimension } from '../questions/schemas/question.schema';
+import { LeaderboardService } from '../leaderboard/leaderboard.service';
+import { WhatsappService } from '../whatsapp/whatsapp.service';
 
 const MAX_POINTS_PER_QUESTION = 3;
 
 @Injectable()
 export class AnalysisService {
+  private readonly logger = new Logger(AnalysisService.name);
+
   constructor(
     @InjectModel(AnalysisReport.name)
     private readonly analysisReportModel: Model<AnalysisReportDocument>,
@@ -27,6 +31,8 @@ export class AnalysisService {
     @InjectModel(Question.name)
     private readonly questionModel: Model<QuestionDocument>,
     private readonly templateReportService: TemplateReportService,
+    private readonly leaderboardService: LeaderboardService,
+    private readonly whatsappService: WhatsappService,
   ) {}
 
   async getExisting(participantId: string): Promise<AnalysisReportDocument> {
@@ -101,7 +107,7 @@ export class AnalysisService {
       dimensionScores,
     });
 
-    return this.analysisReportModel.create({
+    const report = await this.analysisReportModel.create({
       participantId: participant._id,
       sessionId: participant.sessionId,
       generatedAt: new Date(),
@@ -110,6 +116,39 @@ export class AnalysisService {
       dimensionScores,
       reportJson: parsed,
       rawModelResponse: raw,
+    });
+
+    // Fire the WhatsApp result message only on first generation (not on
+    // repeat views of an already-cached report), so a participant never
+    // gets it twice.
+    this.sendWhatsappResult(participant, techScore).catch((err) => {
+      this.logger.warn(
+        `Failed to send WhatsApp result to participant ${participant._id.toString()}: ${(err as Error).message}`,
+      );
+    });
+
+    return report;
+  }
+
+  private async sendWhatsappResult(
+    participant: ParticipantDocument,
+    techScore: number,
+  ): Promise<void> {
+    const ranked = await this.leaderboardService.getFullRankedList(
+      participant.sessionId,
+    );
+    const entry = ranked.find(
+      (e) => e.participantId === participant._id.toString(),
+    );
+    if (!entry) return; // never answered anything — no rank to report
+
+    await this.whatsappService.sendQuizResult({
+      whatsappNumber: participant.whatsappNumber,
+      name: participant.name,
+      businessName: participant.businessName,
+      rank: entry.rank,
+      totalParticipants: ranked.length,
+      techScore,
     });
   }
 }
